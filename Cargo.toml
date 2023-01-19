@@ -1,0 +1,13 @@
+[package]
+name = "cflp"
+version = "0.1.0"
+edition = "2021"
+authors = ["nxe <rosiegbartlett@gmail.com>"]
+repository = "https://github.com/fck-language/context-free-lang"
+readme = "README.md"
+license = "GPL-3.0"
+
+include = ["src/lib.rs", "Cargo.toml", "cflp_macros/src/*", "cflp_macros/Cargo.toml"]
+
+[dependencies]
+cflp_macros = { path = "cflp_macros" }
