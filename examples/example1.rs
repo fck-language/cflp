@@ -27,12 +27,14 @@ mod example {
 	use cflp::rule;
 	rule!(
 		(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
+		// Root(Vec<u8>)
 		(Root; TokenType::OP, ([TokenType::Literal; u8])*, (TokenType::CP)?)
 	);
 }
 
 mod equivalent {
 	use super::{Token, TokenType};
+	use cflp::rule;
 	use cflp::Parser;
 	#[derive(Debug, Clone)]
     pub(crate) struct Root(Vec<((u8))>);
