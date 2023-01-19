@@ -7,6 +7,8 @@ use syn::{Ident, Expr, Type, Visibility};
 pub(crate) enum Value {
 	/// Single value
 	Single(Expr),
+	/// Call to another rule
+	Call(Ident),
 	/// Saved value
 	Save(SaveType),
 	/// Group of values
@@ -16,6 +18,7 @@ pub(crate) enum Value {
 #[derive(Clone)]
 pub(crate) enum SaveType {
 	Literal(Expr),
+	Call(Ident),
 	Unwrapping(Expr, Vec<SaveUnwrapType>)
 }
 
@@ -113,9 +116,11 @@ impl Value {
 	pub(crate) fn get_return_type(&self, match_type: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(_) => TokenStream::new(),
+			Value::Call(n) => TokenStream::from(n.to_token_stream()),
 			Value::Save(inner) => {
 				match inner {
 					SaveType::Literal(_) => match_type.clone(),
+					SaveType::Call(n) => TokenStream::from(n.to_token_stream()),
 					SaveType::Unwrapping(_, args) => {
 						let mut out = TokenStream::new();
 						let mut iter = args.iter().filter_map(|t| if let SaveUnwrapType::Use(t) = t { Some(t) } else { None });
@@ -151,6 +156,7 @@ impl Value {
 	pub(crate) fn contains_save(&self) -> bool {
 		match self {
 			Value::Single(_) => false,
+			Value::Call(_) => false,
 			Value::Save(_) => true,
 			Value::Group(_, s) => s.clone()
 		}

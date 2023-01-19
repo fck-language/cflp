@@ -40,6 +40,18 @@ impl Value {
 				])));
 				out
 			}
+			Value::Call(n) => {
+				// if let Err(e) = $n::parse(src) { $ret Err(e) }
+				let mut out = TokenStream::from_iter(vec![
+					ident!("if"), ident!("let"), ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e"))), punc!('=')
+				]);
+				out.extend(TokenStream::from(n.to_token_stream()));
+				out.extend(vec![
+					puncj!(':'), punc!(':'), ident!("parse"), group!(Delimiter::Parenthesis, Some(ident!("src"))),
+					group!(Delimiter::Brace, vec![if is_loop_while { ident!("break") } else { ident!("return") }, ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e")))])
+				]);
+				out
+			}
 			Value::Save(_) => unreachable!("Value::Save variant should be inaccessible under a no_save function"),
 			Value::Group(g, s) => {
 				#[cfg(debug_assertions)]

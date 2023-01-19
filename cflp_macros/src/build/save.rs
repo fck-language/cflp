@@ -27,6 +27,7 @@ impl SaveType {
 					group!(Delimiter::Brace; ret)
 				])
 			}
+			SaveType::Call(_) => unreachable!("SaveType::Call(_).if_condition should be unreachable. Covered by another calling match arm"),
 			SaveType::Unwrapping(e, t) => {
 				// if let Some($e($t_match)) = next.map($map_fn) { Ok($t_return) }
 				let mut match_vars = Vec::new();
@@ -62,6 +63,7 @@ impl SaveType {
 	pub(crate) fn to_type(&self) -> TokenStream {
 		match self {
 			SaveType::Literal(e) => TokenStream::from(e.to_token_stream()),
+			SaveType::Call(_) => unreachable!("SaveType::Call(_).to_type should be unreachable. Covered by another calling match arm"),
 			SaveType::Unwrapping(e, t) => {
 				let mut out = TokenStream::from(e.to_token_stream());
 				let mut t_iter = t.iter();
@@ -81,7 +83,17 @@ impl SaveType {
 impl Value {
 	pub(crate) fn build_save(&self, n: String, wrap_option: bool, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		match self {
-			Value::Single(_) => unreachable!("Value::Literal variant should be inaccessible under a save function"),
+			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
+			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function"),
+			Value::Save(SaveType::Call(n)) => {
+				// match $n::parse(src)
+				let mut out = TokenStream::from(n.to_token_stream());
+				out.extend(vec![
+					puncj!(':'), punc!(':'), ident!("parse"), group!(Delimiter::Parenthesis, Some(ident!("src")))
+				]);
+				if !wrap_option { out.extend(Some(punc!('?'))) }
+				out
+			}
 			Value::Save(v) => {
 				// let next = src.next();
 				// $v.if_condition() else {

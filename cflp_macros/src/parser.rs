@@ -85,6 +85,9 @@ impl Parse for Value {
 			let content;
 			bracketed!(content in input);
 			Ok(Value::Save(content.parse()?))
+		} else if input.peek(Token![@]) {
+			input.parse::<Token![@]>()?;
+			Ok(Value::Call(input.parse()?))
 		} else {
 			Ok(Value::Single(input.parse()?))
 		}
@@ -93,6 +96,10 @@ impl Parse for Value {
 
 impl Parse for SaveType {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
+		if input.peek(Token![@]) {
+			input.parse::<Token![@]>()?;
+			return Ok(SaveType::Call(input.parse()?))
+		}
 		let save_type = input.parse::<Expr>()?;
 		if input.peek(Token![;]) {
 			input.parse::<Token![;]>()?;

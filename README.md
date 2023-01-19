@@ -31,3 +31,4 @@ All the examples have has some manual formatting of line breaks and some comment
   ```
 - Or blocks are currently unsupported but will be soon
 - Calling other functions (an identifying feature of CFLs) is not currently implemented. I'm working on it
+- Errors are a bit rudimentary at the moment. If you consider the rule `(Token::T1)?, Token::T2`, the first token could be either `Token::T1` or `Token::T2`. If neither of thee are found then the returned error will say it expected `Token::T2`. A future version wil have better errors where the `expected` is a `Vec<E>` that will be calculated for each possible error position for more useful errors 
