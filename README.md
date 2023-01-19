@@ -19,7 +19,9 @@ The saved values in the resulting structs must also implement the derived traits
 
 ## Examples
 
-The [examples](examples) directory contains some example files with generated expansions. These are generated using [`cargo-expand`](https://crates.io/crates/cargo-expand) without the expansion of the derived traits and some manual visual formatting (no removal of parentheses or brackets, just changing some line breaks).
+The [examples](examples) directory contains some example files with generated expansions. These are generated using [`cargo-expand`](https://crates.io/crates/cargo-expand) without the expansion of the derived traits.
+
+All the examples have has some manual formatting of line breaks and some comments to indicate whoch section is currently being parser.
 
 ## Current issues
 
