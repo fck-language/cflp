@@ -30,7 +30,7 @@ pub fn rule(t: TokenStream) -> TokenStream {
 	impl_fn.extend(TokenStream::from(inner.meta.tok_type.to_token_stream()));
 	impl_fn.extend(vec![
 		punc!('>'), punc!('+'), ident!("Clone"), punc!('>'), group!(Delimiter::Parenthesis, vec![
-			ident!("mut"), ident!("src"), punc!(':'), punc!('&'), ident!("mut"), ident!("T")
+			ident!("src"), punc!(':'), punc!('&'), ident!("mut"), ident!("T")
 		]), puncj!('-'), punc!('>'), ident!("Result"), punc!('<'), ident!("Self"), punc!(','),
 		ident!("cflp"), puncj!(':'), punc!(':'), ident!("Error"), punc!('<'), punc!('&'), puncj!('\''), ident!("a")
 	]);

@@ -4,7 +4,7 @@ This crate provides functionality for parsing context-free languages and was wri
 
 ## Usage
 
-This crate provides the `rule!` macro to enable parsing context-free languages. The macro is quite powerful so we recommend you have a look at the [documentation](https://fck-language.com/cflp).
+This crate provides the `rule!` macro to enable parsing context-free languages. The macro is quite powerful and can become complicated quickly, so we recommend you have a look at the [documentation](https://fck-language.github.io/cflp).
 
 the crate also provides the `Parser` trait and `Error` struct returned when the `Parser::parse` function encounters an error.
 
@@ -13,7 +13,6 @@ the crate also provides the `Parser` trait and `Error` struct returned when the 
 There are three trait requirements for the two types which we'll call `T` for the input type (the input iterator into the parse functions has type `F: Iter<Item=&T>`) and `E` for the comparison type:
 1. `E: PartialEq<E>`
 2. `&T: PartialEq<E>`
-3. `Option<&T>: PartialEq<E>`
 
 The saved values in the resulting structs must also implement the derived traits given to the macro. For example, you can derive `Copy` if you store a `u8` but not a `String`.
 
