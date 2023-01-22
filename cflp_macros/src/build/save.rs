@@ -1,6 +1,7 @@
 use proc_macro::{Delimiter, TokenStream, Spacing, Span};
 use quote::ToTokens;
-use crate::prelude::{Value, Group, SaveType};
+use syn::Ident;
+use crate::prelude::{Value, Group, SaveType, ReturnType};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -81,53 +82,30 @@ impl SaveType {
 }
 
 impl Value {
-	pub(crate) fn build_save(&self, n: String, wrap_option: bool, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	pub(crate) fn build_save(&self, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function"),
-			Value::Save(SaveType::Call(n)) => {
-				// match $n::parse(src)
-				let mut out = TokenStream::from(n.to_token_stream());
-				out.extend(vec![
-					puncj!(':'), punc!(':'), ident!("parse"), group!(Delimiter::Parenthesis, Some(ident!("src")))
-				]);
-				if !wrap_option { out.extend(Some(punc!('?'))) }
-				out
-			}
-			Value::Save(v) => {
-				// let next = src.next();
-				// $v.if_condition() else {
-				//     $ret Err(cflp::Error { expected: $v.to_type(), found: next })
-				// }
-				let mut err_inner = TokenStream::from_iter(vec![ident!("expected"), punc!(':')]);
-				err_inner.extend(TokenStream::from(v.to_type()));
-				err_inner.extend(vec![punc!(','), ident!("found"), punc!(':'), ident!("next")]);
-				let mut err_wrap = if wrap_option { TokenStream::new() } else { TokenStream::from(ident!("return")) };
-				err_wrap.extend(vec![ident!("Err"), group!(Delimiter::Parenthesis, vec![
-					ident!("cflp"), puncj!(':'), punc!(':'), ident!("Error"), group!(Delimiter::Brace; err_inner)
-				])]);
-				let mut out = TokenStream::from_iter(vec![
-					ident!("let"), ident!("next"), punc!('='), ident!("src"), punc!('.'), ident!("next"), group!(Delimiter::Parenthesis), punc!(';')
-				]);
-				out.extend(v.if_condition(wrap_option, map_fn));
-				out.extend(vec![
-					ident!("else"), group!(Delimiter::Brace; err_wrap)
-				]);
-				out
-			}
+			Value::Save(SaveType::Call(n)) => build_value_save_call(n, return_type),
+			Value::Save(v) => build_value_save_other(v, return_type, map_fn),
 			Value::Group(g, _) => {
+				let inner_return_type = return_type.set_wrapped(false);
 				let mut out = TokenStream::new();
 				let mut returned = Vec::new();
 				for (k, i) in g.iter().enumerate() {
 					if i.contains_save() {
 						returned.extend(vec![ident!(&*format!("{}_{}", n, k)), punc!(',')]);
-						out.extend(i.build_save(format!("{}_{}", n, k), wrap_option, match_type, map_fn))
+						out.extend(i.build_save(format!("{}_{}", n, k), inner_return_type, match_type, map_fn))
 					} else {
-						out.extend(i.build_no_save(false, match_type))
+						out.extend(i.build_no_save(inner_return_type, match_type, map_fn))
 					}
 				}
 				returned.pop();
-				out.extend(vec![punc!(';'), group!(Delimiter::Parenthesis, returned)]);
+				out.extend(Some(punc!(';')));
+				if return_type.is_wrapped() {
+					out.extend(Some(ident!("Ok")))
+				}
+				out.extend(Some(group!(Delimiter::Parenthesis, returned)));
 				out
 			}
 		}
@@ -135,80 +113,154 @@ impl Value {
 }
 
 impl Group {
-	pub(crate) fn build_save(&self, n: String, wrap_option: bool, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	pub(crate) fn build_save(&self, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		let mut out = TokenStream::from_iter(vec![
 			ident!("let"), ident!(&*n), punc!('=')
 		]);
 		let inner = match self {
-			Group::Literal(v, _) => v.build_save(n, wrap_option, match_type, map_fn),
+			Group::Literal(v, _) => v.build_save(n, return_type, match_type, map_fn),
 			Group::Kleene(v, _) => {
 				let mut out = TokenStream::from_iter(vec![
 					ident!("let"), ident!("mut"), ident!(&*format!("{}_out", n)), punc!('='),
 					ident!("Vec"), puncj!(':'), punc!(':'), ident!("new"), group!(Delimiter::Parenthesis), punc!(';')
 				]);
-				out.extend(kleene_inner(v, n.clone(), match_type, map_fn));
+				out.extend(kleene_inner(v, n.clone(), return_type, match_type, map_fn));
 				out
 			}
 			Group::Positive(v, _) => {
 				// a+ == a a*
-				let mut out = Group::Literal(v.clone(), true).build_save(format!("{}_0", n), wrap_option, match_type, map_fn);
+				let mut out = Group::Literal(v.clone(), true).build_save(format!("{}_0", n), return_type, match_type, map_fn);
 				// $n.push($n_0)
 				out.extend(TokenStream::from_iter(vec![
 					ident!("let"), ident!("mut"), ident!(&*format!("{}_out", n)), punc!('='),
 					ident!("vec"), puncj!('!'), group!(Delimiter::Bracket, Some(ident!(&*format!("{}_0", n)))), punc!(';')
 				]));
-				out.extend(kleene_inner(v, n.clone(), match_type, map_fn));
+				out.extend(kleene_inner(v, n.clone(), return_type, match_type, map_fn));
 				out
 			}
-			Group::Option(v, _) => {
-				// let mut src_old = src.clone();
-				let mut out = TokenStream::from_iter(vec![
-					ident!("let"), ident!("mut"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';')
-				]);
-				// match { $v.build_save(true) } {
-				//     Ok(t) => Some(t),
-				//     Err(e) => { *src = src_old; None }
-				// }
-				out.extend(vec![
-					ident!("match"), group!(Delimiter::Brace; v.build_save(n, true, match_type, map_fn)), group!(Delimiter::Brace, vec![
-						ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("Some"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
-						ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
-							punc!('*'), ident!("src"), punc!('='), ident!("src_old"), punc!(';'), ident!("None")
-						])
-					])
-				]);
-				out
-			}
+			Group::Option(v, _) => build_group_option(v, n.clone(), return_type, match_type, map_fn)
 		};
 		out.extend(vec![group!(Delimiter::Brace; inner), punc!(';')]);
 		out
 	}
 }
 
-fn kleene_inner(v: &Value, n: String, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
-	TokenStream::from_iter(vec![
-		// let mut src_old;
-		ident!("let"), ident!("mut"), ident!("src_old"), punc!(';'),
-		// loop {
-		//     src_old = src.clone();
-		//     match { $v.build_save($is_loop_while); $n } {
-		//         Ok(t) => $n_out.push(t),
-		//         Err(_) => {
-		//             *src = src_old;
-		//             break
-		//         }
-		//     }
-		// }
-		ident!("loop"), group!(Delimiter::Brace, vec![
-			ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
-			ident!("match"), group!(Delimiter::Brace; v.build_save(format!("{}_0", n), true, match_type, map_fn)),
-			group!(Delimiter::Brace, vec![
-				ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!(&*format!("{}_out", n)), punc!('.'), ident!("push"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
-				ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
-					punc!('*'), ident!("src"), punc!('='), ident!("src_old"), punc!(';'), ident!("break")
-				])
+/// ```rust
+/// loop {
+/// 	let src_old = src.clone();
+/// 	match 'l: {
+/// 		v.build_save()
+/// 	} {
+/// 		Ok(t) => n_out.push(t),
+/// 		Err(_) => {
+/// 			*src = src_old;
+/// 			break
+/// 		}
+/// 	}
+/// }
+/// ```
+fn kleene_inner(v: &Value, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	let inner_return_type = return_type.new_lifetime(true);
+	let mut loop_inner = TokenStream::from_iter(vec![
+		ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
+		ident!("match")
+	]);
+	loop_inner.extend(inner_return_type.get_lifetime());
+	loop_inner.extend(vec![
+		punc!(':'),
+		group!(Delimiter::Brace; v.build_save(format!("{}_0", n), inner_return_type, match_type, map_fn)),
+		group!(Delimiter::Brace, vec![
+			ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!(&*format!("{}_out", n)), punc!('.'), ident!("push"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
+			ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
+				punc!('*'), ident!("src"), punc!('='), ident!("src_old"), punc!(';'), ident!("break")
 			])
-		]),
+		])
+	]);
+	TokenStream::from_iter(vec![
+		ident!("loop"), group!(Delimiter::Brace; loop_inner),
 		ident!(&*format!("{}_out", n))
 	])
+}
+
+/// ```rust
+/// match e::parse(src) {
+/// 	Ok(t) => (Ok)(t),
+/// 	Err(e) => return_type.to_token_stream(Err(e))
+/// }
+/// ```
+fn build_value_save_call(e: &Ident, return_type: ReturnType) -> TokenStream {
+	let mut out = TokenStream::from(ident!("match"));
+	out.extend(TokenStream::from(e.to_token_stream()));
+	out.extend(vec![
+		puncj!(':'), punc!(':'), ident!("parse"), group!(Delimiter::Parenthesis, Some(ident!("src")))
+	]);
+	let mut match_inner = TokenStream::from_iter(vec![
+		ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>')
+	]);
+	if return_type.is_wrapped() {
+		match_inner.extend(vec![ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t")))])
+	} else {
+		match_inner.extend(Some(ident!("t")))
+	}
+	match_inner.extend(vec![
+		punc!(','), ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e"))), puncj!('='), punc!('>')
+	]);
+	match_inner.extend(return_type.to_token_stream(TokenStream::from_iter(vec![
+		ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e")))
+	])));
+	out.extend(Some(group!(Delimiter::Brace; match_inner)));
+	out
+}
+
+/// ```rust
+/// let next = src.next();
+/// if e.if_condition()
+/// else {
+/// 	return_type.to_token_stream(
+/// 		Err(cflp::Error { expected: e.to_type(), found: next }
+/// 	)
+/// }
+/// ```
+fn build_value_save_other(e: &SaveType, return_type: ReturnType, map_fn: &TokenStream) -> TokenStream {
+	let mut err_inner = TokenStream::from_iter(vec![ident!("expected"), punc!(':')]);
+	err_inner.extend(TokenStream::from(e.to_type()));
+	err_inner.extend(vec![punc!(','), ident!("found"), punc!(':'), ident!("next")]);
+	let err = TokenStream::from_iter(vec![ident!("Err"), group!(Delimiter::Parenthesis, vec![
+		ident!("cflp"), puncj!(':'), punc!(':'), ident!("Error"), group!(Delimiter::Brace; err_inner)
+	])]);
+	let mut out = TokenStream::from_iter(vec![
+		ident!("let"), ident!("next"), punc!('='), ident!("src"), punc!('.'), ident!("next"), group!(Delimiter::Parenthesis), punc!(';')
+	]);
+	out.extend(e.if_condition(return_type.is_wrapped(), map_fn));
+	out.extend(vec![
+		ident!("else"), group!(Delimiter::Brace; return_type.to_token_stream(err))
+	]);
+	out
+}
+
+/// ```rust
+/// let src_old = src.clone();
+/// match 'l: { v.build() } {
+/// 	Ok(t) => Some(t),
+/// 	Err(e) => { *src = src_old; None }
+/// }
+/// ```
+fn build_group_option(e: &Value, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	let inner_return_type = return_type.new_lifetime(true);
+	let mut out = TokenStream::from_iter(vec![
+		ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
+		ident!("match")
+	]);
+	out.extend(inner_return_type.get_lifetime());
+	out.extend(vec![
+		punc!(':'),
+		group!(Delimiter::Brace; e.build_save(format!("{}_0", n), inner_return_type, match_type, map_fn)),
+		group!(Delimiter::Brace, vec![
+			ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("Some"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
+			ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
+				punc!('*'), ident!("src"), punc!('='), ident!("src_old"), punc!(';'), ident!("None")
+			])
+		])
+	]);
+	out
 }

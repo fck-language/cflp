@@ -34,6 +34,7 @@ The structure of the examples is the same for all of them:
   ```rust
   if let EnumName::Variant(1, a) = var_to_check { f(a) }
   ```
-- Or blocks are currently unsupported but will be soon
+- Enum type rules can't currently have custom names
+- Types are all generated. This means no type hints in an IDE. An option of having pre-generated types will be added later
 - Calling other functions (an identifying feature of CFLs) is not currently implemented. I'm working on it
 - Errors are a bit rudimentary at the moment. If you consider the rule `(Token::T1)?, Token::T2`, the first token could be either `Token::T1` or `Token::T2`. If neither of thee are found then the returned error will say it expected `Token::T2`. A future version wil have better errors where the `expected` is a `Vec<E>` that will be calculated for each possible error position for more useful errors 

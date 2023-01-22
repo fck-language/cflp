@@ -1,4 +1,4 @@
-use proc_macro::{Delimiter, Spacing, TokenStream, Span};
+use proc_macro::{Delimiter, Spacing, TokenStream, Span, TokenTree};
 use quote::ToTokens;
 use syn::{Ident, Expr, Type, Visibility};
 
@@ -48,8 +48,6 @@ pub(crate) enum Group {
 	Positive(Value, bool),
 	/// Optional value ()?
 	Option(Value, bool),
-	// Or values ()|()|...|()
-	// Or(Vec<Value>, bool)
 }
 
 /// Macro rule
@@ -82,12 +80,27 @@ pub(crate) struct Rule {
 	/// Rule name
 	pub name: Ident,
 	/// Rule group
-	pub inner: Vec<Group>
+	pub inner: RuleInnerEnum
 }
+
+#[derive(Clone)]
+pub(crate) enum RuleInnerEnum {
+	Single(RuleInner),
+	Multiple(Vec<RuleInner>)
+}
+
+#[derive(Clone)]
+pub(crate) struct RuleInner(pub Vec<Group>);
 
 /// Macro rules
 #[derive(Clone)]
 pub(crate) struct Rules(pub Vec<Rule>);
+
+#[derive(Copy, Clone)]
+pub(crate) enum ReturnType {
+	Function,
+	Lifetime(u8, bool)
+}
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -96,10 +109,78 @@ macro_rules! group {
 	($t:expr; $s:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, $s))};
 }
 macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Alone))}; }
+macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
+
+impl ReturnType {
+	pub fn new_lifetime(&self, wrap_result: bool) -> Self {
+		match self {
+			ReturnType::Function => Self::Lifetime(0, wrap_result),
+			ReturnType::Lifetime(i, _) => ReturnType::Lifetime(i + 1, wrap_result)
+		}
+	}
+	
+	pub fn set_wrapped(self, t: bool) -> Self {
+		match self {
+			ReturnType::Function => self,
+			ReturnType::Lifetime(i, _) => Self::Lifetime(i, t)
+		}
+	}
+	
+	pub fn is_wrapped(&self) -> bool {
+		match self {
+			ReturnType::Function => false,
+			ReturnType::Lifetime(_, t) => *t
+		}
+	}
+	
+	pub fn get_lifetime(&self) -> TokenStream {
+		match self {
+			ReturnType::Function => TokenStream::new(),
+			ReturnType::Lifetime(i, _) => TokenStream::from_iter(vec![puncj!('\''), ident!(&*format!("l{}", i))])
+		}
+	}
+	
+	pub fn to_token_stream(&self, inner: TokenStream) -> TokenStream {
+		let mut out = match self {
+			ReturnType::Function => TokenStream::from(ident!("return")),
+			ReturnType::Lifetime(i, _) => TokenStream::from_iter(vec![ident!("break"), puncj!('\''), ident!(&*format!("l{}", i))])
+		};
+		out.extend(inner);
+		out
+	}
+}
 
 impl Rule {
+	pub(crate) fn generate_type(&self, visibility: &Visibility, match_type: &TokenStream) -> TokenStream {
+		let mut out = TokenStream::from(visibility.to_token_stream());
+		match &self.inner {
+			RuleInnerEnum::Single(inner) => {
+				out.extend(Some(ident!("struct")));
+				out.extend(TokenStream::from(self.name.to_token_stream()));
+				out.extend(inner.return_type(match_type));
+				out.extend(Some(punc!(';')));
+			},
+			RuleInnerEnum::Multiple(all_inner) => {
+				out.extend(Some(ident!("enum")));
+				out.extend(TokenStream::from(self.name.to_token_stream()));
+				let mut enum_inner = TokenStream::new();
+				for (index, rule) in all_inner.iter().enumerate() {
+					enum_inner.extend(vec![
+						ident!(&*format!("Var{}", index + 1)),
+						group!(Delimiter::Parenthesis; rule.return_type(match_type)),
+						punc!(',')
+					])
+				}
+				out.extend(Some(group!(Delimiter::Brace; enum_inner)));
+			}
+		}
+		out
+	}
+}
+
+impl RuleInner {
 	pub(crate) fn return_type(&self, match_type: &TokenStream) -> TokenStream {
-		let mut inner_ret = self.inner.iter().map(|t| t.get_return_type(match_type)).filter(|t| !t.is_empty());
+		let mut inner_ret = self.0.iter().map(|t| t.get_return_type(match_type)).filter(|t| !t.is_empty());
 		let mut out = TokenStream::new();
 		if let Some(i) = inner_ret.next() {
 			out.extend(i);
@@ -109,6 +190,22 @@ impl Rule {
 			}
 		}
 		TokenStream::from(group!(Delimiter::Parenthesis; out))
+	}
+	
+	pub(crate) fn build(&self, return_type: ReturnType, comp_type: &TokenStream, map_fn: &TokenStream) -> (TokenStream, TokenTree) {
+		let mut out = TokenStream::new();
+		let mut final_return = Vec::new();
+		for (k, i) in self.0.iter().enumerate() {
+			if i.contains_save() {
+				final_return.extend(vec![ident!(&*format!("v_{}", k)), punc!(',')]);
+				out.extend(i.build_save(format!("v_{}", k), return_type, comp_type, map_fn));
+			} else {
+				out.extend(i.build_no_save(return_type, comp_type, map_fn));
+			}
+			out.extend(Some(punc!(';')));
+		}
+		final_return.pop();
+		(out, group!(Delimiter::Parenthesis, final_return))
 	}
 }
 

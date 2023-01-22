@@ -5,7 +5,7 @@ mod build;
 use proc_macro::{Delimiter, TokenStream, Spacing, Span};
 use quote::ToTokens;
 use syn::parse_macro_input;
-use crate::prelude::MacroInner;
+use crate::prelude::{MacroInner, ReturnType, RuleInnerEnum};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -53,11 +53,7 @@ pub fn rule(t: TokenStream) -> TokenStream {
 				])
 			])
 		]);
-        out.extend(TokenStream::from(inner.meta.struct_vis.to_token_stream()));
-        out.extend(Some(ident!("struct")));
-        out.extend(TokenStream::from(rule.name.to_token_stream()));
-        out.extend(rule.return_type(&comp_type));
-        out.extend(Some(punc!(';')));
+        out.extend(rule.generate_type(&inner.meta.struct_vis, &comp_type));
 		
 		// Parser impl
         out.extend(vec![
@@ -69,23 +65,81 @@ pub fn rule(t: TokenStream) -> TokenStream {
 		out.extend(vec![punc!('>'), ident!("for")]);
         out.extend(TokenStream::from(rule.name.to_token_stream()));
 		let mut innner_token_stream = TokenStream::new();
-		let mut final_return = Vec::new();
 		// extend the Parser::parse inner group by group
-		for (k, i) in rule.inner.iter().enumerate() {
-			if i.contains_save() {
-				final_return.extend(vec![ident!(&*format!("v_{}", k)), punc!(',')]);
-				innner_token_stream.extend(i.build_save(format!("v_{}", k), false, &comp_type, &map_fn));
-			} else {
-				innner_token_stream.extend(i.build_no_save(false, &comp_type));
+		match rule.inner {
+			RuleInnerEnum::Single(inner) => {
+				let (rule_inner, return_args) = inner.build(ReturnType::Function, &comp_type, &map_fn);
+				innner_token_stream.extend(rule_inner);
+				innner_token_stream.extend(vec![
+					ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, vec![
+						ident!("Self"), return_args
+					])
+				]);
 			}
-			innner_token_stream.extend(Some(punc!(';')));
+			RuleInnerEnum::Multiple(inners) => {
+				let mut out = TokenStream::new();
+				let mut iter = inners.iter().enumerate();
+				let (count, rule) = iter.next().unwrap();
+				out.extend(vec![
+					ident!("let"), ident!("first_err"), punc!(';'),
+					ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
+					ident!("match")
+				]);
+				let inner_return_rule = ReturnType::Lifetime(0, false);
+				out.extend(inner_return_rule.get_lifetime());
+				let (mut rule_inner, return_args) = rule.build(inner_return_rule, &comp_type, &map_fn);
+				rule_inner.extend(vec![
+					punc!(';'), ident!("break")
+				]);
+				rule_inner.extend(inner_return_rule.get_lifetime());
+				rule_inner.extend(vec![
+					ident!("Ok"), group!(Delimiter::Parenthesis, vec![
+						ident!("Self"), puncj!(':'), punc!(':'), ident!(&*format!("Var{}", count + 1)), return_args
+					])
+				]);
+				out.extend(TokenStream::from_iter(vec![
+					punc!(':'), group!(Delimiter::Brace; rule_inner), group!(Delimiter::Brace, vec![
+						ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
+						ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
+							ident!("first_err"), punc!('='), ident!("e"), punc!(';'),
+							punc!('*'), ident!("src"), punc!('='), ident!("src_old")
+						])
+					])
+				]));
+				for (count, rule) in iter {
+					// let src_old = src.clone();
+					// match loop { $rule_inner break Ok(Self::Var${count+1}(return_args) } {
+					//     Ok(t) => return Ok(t),
+					//     Err(_) => *src = src_old
+					// }
+					out.extend(vec![
+						ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
+						ident!("match")
+					]);
+					out.extend(inner_return_rule.get_lifetime());
+					let (mut rule_inner, return_args) = rule.build(inner_return_rule, &comp_type, &map_fn);
+					rule_inner.extend(vec![
+						punc!(';'), ident!("break")
+					]);
+					rule_inner.extend(inner_return_rule.get_lifetime());
+					rule_inner.extend(vec![
+						ident!("Ok"), group!(Delimiter::Parenthesis, vec![
+							ident!("Self"), puncj!(':'), punc!(':'), ident!(&*format!("Var{}", count + 1)), return_args
+						])
+					]);
+					out.extend(TokenStream::from_iter(vec![
+						punc!(':'), group!(Delimiter::Brace; rule_inner), group!(Delimiter::Brace, vec![
+							ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
+							ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), punc!('*'), ident!("src"), punc!('='), ident!("src_old")
+						])
+					]));
+				}
+				out.extend(vec![
+					ident!("return"), ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("first_err")))
+				]);
+				innner_token_stream.extend(out);
+			}
 		}
-		final_return.pop();
-		innner_token_stream.extend(vec![
-			ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, vec![
-				ident!("Self"), group!(Delimiter::Parenthesis, final_return)
-			])
-		]);
 		let mut inner_impl_fn = impl_fn.clone();
 		inner_impl_fn.extend(Some(group!(Delimiter::Brace, innner_token_stream)));
 		out.extend(Some(group!(Delimiter::Brace; inner_impl_fn)));
