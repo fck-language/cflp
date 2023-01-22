@@ -90,7 +90,10 @@ pub(crate) enum RuleInnerEnum {
 }
 
 #[derive(Clone)]
-pub(crate) struct RuleInner(pub Vec<Group>);
+pub(crate) struct RuleInner{
+	pub(crate) name: Option<Ident>,
+	pub(crate) inner:  Vec<Group>
+}
 
 /// Macro rules
 #[derive(Clone)]
@@ -165,8 +168,12 @@ impl Rule {
 				out.extend(TokenStream::from(self.name.to_token_stream()));
 				let mut enum_inner = TokenStream::new();
 				for (index, rule) in all_inner.iter().enumerate() {
+					if let Some(name) = &rule.name {
+						enum_inner.extend(TokenStream::from(name.to_token_stream()));
+					} else {
+						enum_inner.extend(Some(ident!(&*format!("Var{}", index + 1))));
+					}
 					enum_inner.extend(vec![
-						ident!(&*format!("Var{}", index + 1)),
 						group!(Delimiter::Parenthesis; rule.return_type(match_type)),
 						punc!(',')
 					])
@@ -180,7 +187,7 @@ impl Rule {
 
 impl RuleInner {
 	pub(crate) fn return_type(&self, match_type: &TokenStream) -> TokenStream {
-		let mut inner_ret = self.0.iter().map(|t| t.get_return_type(match_type)).filter(|t| !t.is_empty());
+		let mut inner_ret = self.inner.iter().map(|t| t.get_return_type(match_type)).filter(|t| !t.is_empty());
 		let mut out = TokenStream::new();
 		if let Some(i) = inner_ret.next() {
 			out.extend(i);
@@ -195,7 +202,7 @@ impl RuleInner {
 	pub(crate) fn build(&self, return_type: ReturnType, comp_type: &TokenStream, map_fn: &TokenStream) -> (TokenStream, TokenTree) {
 		let mut out = TokenStream::new();
 		let mut final_return = Vec::new();
-		for (k, i) in self.0.iter().enumerate() {
+		for (k, i) in self.inner.iter().enumerate() {
 			if i.contains_save() {
 				final_return.extend(vec![ident!(&*format!("v_{}", k)), punc!(',')]);
 				out.extend(i.build_save(format!("v_{}", k), return_type, comp_type, map_fn));

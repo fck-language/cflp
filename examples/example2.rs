@@ -24,7 +24,7 @@ rule!(
 	// Root(Vec<Expr>)
 	(Root; TokenType::OP, ([@Expr])*, TokenType::CP)
 	// Expr( u8 | char )
-	(Expr; [TokenType::Literal; u8]; [TokenType::Other; char])
+	(Expr; Literal => [TokenType::Literal; u8]; [TokenType::Other; char])
 );
 
 #[allow(unused_parens, unused_imports)]
@@ -82,7 +82,7 @@ mod equivalent {
 	
 	#[derive(Debug, Clone)]
 	pub(crate) enum Expr {
-		Var1(((u8))),
+		Literal(((u8))),
 		Var2(((char))),
 	}
 	
@@ -104,7 +104,7 @@ mod equivalent {
 						});
 					}
 				};
-				break 'l0 Ok(Self::Var1(v_0));
+				break 'l0 Ok(Self::Literal(v_0));
 			} {
 				Ok(t) => return Ok(t),
 				Err(e) => {

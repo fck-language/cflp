@@ -77,26 +77,35 @@ pub fn rule(t: TokenStream) -> TokenStream {
 				]);
 			}
 			RuleInnerEnum::Multiple(inners) => {
-				let mut out = TokenStream::new();
+				let inner_return_rule = ReturnType::Lifetime(0, false);
 				let mut iter = inners.iter().enumerate();
 				let (count, rule) = iter.next().unwrap();
-				out.extend(vec![
-					ident!("let"), ident!("first_err"), punc!(';'),
-					ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
-					ident!("match")
-				]);
-				let inner_return_rule = ReturnType::Lifetime(0, false);
-				out.extend(inner_return_rule.get_lifetime());
 				let (mut rule_inner, return_args) = rule.build(inner_return_rule, &comp_type, &map_fn);
 				rule_inner.extend(vec![
 					punc!(';'), ident!("break")
 				]);
 				rule_inner.extend(inner_return_rule.get_lifetime());
-				rule_inner.extend(vec![
-					ident!("Ok"), group!(Delimiter::Parenthesis, vec![
-						ident!("Self"), puncj!(':'), punc!(':'), ident!(&*format!("Var{}", count + 1)), return_args
-					])
+				
+				// expression inside the final `break Ok` statement
+				let mut ok_inner = TokenStream::from_iter(vec![
+					ident!("Self"), puncj!(':'), punc!(':')
 				]);
+				if let Some(name) = &rule.name {
+					ok_inner.extend(TokenStream::from(name.to_token_stream()))
+				} else {
+					ok_inner.extend(Some(ident!(&*format!("Var{}", count + 1))))
+				}
+				ok_inner.extend(Some(return_args));
+				
+				rule_inner.extend(vec![
+					ident!("Ok"), group!(Delimiter::Parenthesis; ok_inner)
+				]);
+				let mut out = TokenStream::from_iter(vec![
+					ident!("let"), ident!("first_err"), punc!(';'),
+					ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
+					ident!("match")
+				]);
+				out.extend(inner_return_rule.get_lifetime());
 				out.extend(TokenStream::from_iter(vec![
 					punc!(':'), group!(Delimiter::Brace; rule_inner), group!(Delimiter::Brace, vec![
 						ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),

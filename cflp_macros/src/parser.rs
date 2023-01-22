@@ -55,6 +55,13 @@ impl Parse for Rule {
 
 impl Parse for RuleInner {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
+		let name = if input.peek2(Token![=>]) {
+			let name = input.parse()?;
+			input.parse::<Token![=>]>()?;
+			name
+		} else {
+			None
+		};
 		let mut inner = vec![input.parse()?];
 		if !input.is_empty() && !input.peek(Token![;]) { input.parse::<Token![,]>()?; }
 		loop {
@@ -63,7 +70,7 @@ impl Parse for RuleInner {
 			if input.is_empty() || input.peek(Token![;]) { break }
 			input.parse::<Token![,]>()?;
 		}
-		Ok(Self(inner))
+		Ok(Self{ name, inner })
 	}
 }
 
