@@ -1,5 +1,4 @@
-//! [`Parse`][syn::parse::Parse] struct impls for [Group], [MacroInner], [Meta], [Rule], [Rules],
-//! and [Value]
+//! [`Parse`][syn::parse::Parse] struct impls for various types
 
 use proc_macro::TokenStream;
 use quote::ToTokens;

@@ -80,18 +80,24 @@ pub(crate) struct Rule {
 	pub inner: RuleInnerEnum,
 }
 
+/// Enum over a rule inner
 #[derive(Clone)]
 pub(crate) enum RuleInnerEnum {
+	/// Single rule option (struct type)
 	Single(RuleInner),
+	/// Multiple rule options (enum type)
 	Multiple(Vec<RuleInner>),
 }
 
+/// Rule inner. Named wrapper around a `Vec<Group>`
 #[derive(Clone)]
 pub(crate) struct RuleInner {
 	pub(crate) name: Option<Ident>,
 	pub(crate) inner: Vec<Group>,
 }
 
+/// Lifetime enum. Used to determine where errors should return to and if a successful result should
+/// be wrapped in a `Result`
 #[derive(Copy, Clone)]
 pub(crate) enum ReturnType {
 	Function,

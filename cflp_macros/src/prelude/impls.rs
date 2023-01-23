@@ -13,6 +13,7 @@ macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Pu
 macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
 
 impl SaveUnwrapType {
+	/// Used to determine if a save type should be used or if it was given as `_`
 	pub fn should_use(&self) -> bool {
 		match self {
 			SaveUnwrapType::Use(_) => true,
@@ -22,6 +23,7 @@ impl SaveUnwrapType {
 }
 
 impl ReturnType {
+	/// Make a new non-conflicting lifetime
 	pub fn new_lifetime(&self, wrap_result: bool) -> Self {
 		match self {
 			ReturnType::Function => Self::Lifetime(0, wrap_result),
@@ -29,6 +31,7 @@ impl ReturnType {
 		}
 	}
 	
+	/// Set if the lifetime should wrap it's result
 	pub fn set_wrapped(self, t: bool) -> Self {
 		match self {
 			ReturnType::Function => self,
@@ -36,6 +39,7 @@ impl ReturnType {
 		}
 	}
 	
+	/// Check if the return type should be wrapped
 	pub fn is_wrapped(&self) -> bool {
 		match self {
 			ReturnType::Function => false,
@@ -43,6 +47,7 @@ impl ReturnType {
 		}
 	}
 	
+	/// Returns a `TokenStream` of the current lifetime
 	pub fn get_lifetime(&self) -> TokenStream {
 		match self {
 			ReturnType::Function => TokenStream::new(),
@@ -50,6 +55,7 @@ impl ReturnType {
 		}
 	}
 	
+	/// Builds a `TokenStream` to return the given `TokenStream`
 	pub fn to_token_stream(&self, inner: TokenStream) -> TokenStream {
 		let mut out = match self {
 			ReturnType::Function => TokenStream::from(ident!("return")),
@@ -61,6 +67,7 @@ impl ReturnType {
 }
 
 impl Rule {
+	/// Generate the data type for the given rule (struct or enum) with visibility and contained values
 	pub(crate) fn generate_type(&self, visibility: &Visibility, match_type: &TokenStream) -> TokenStream {
 		let mut out = TokenStream::from(visibility.to_token_stream());
 		match &self.inner {
@@ -93,6 +100,7 @@ impl Rule {
 }
 
 impl RuleInner {
+	/// Return a `TokenStream` for the types returned
 	pub(crate) fn return_type(&self, match_type: &TokenStream) -> TokenStream {
 		let mut inner_ret = self.inner.iter().map(|t| t.get_return_type(match_type)).filter(|t| !t.is_empty());
 		let mut out = TokenStream::new();
@@ -106,6 +114,7 @@ impl RuleInner {
 		TokenStream::from(group!(Delimiter::Parenthesis; out))
 	}
 	
+	/// Build wrapper
 	pub(crate) fn build(&self, return_type: ReturnType, comp_type: &TokenStream, map_fn: &TokenStream) -> (TokenStream, TokenTree) {
 		let mut out = TokenStream::new();
 		let mut final_return = Vec::new();
@@ -124,6 +133,7 @@ impl RuleInner {
 }
 
 impl Value {
+	/// Return a `TokenStream` for the type(s) returned
 	pub(crate) fn get_return_type(&self, match_type: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(_) => TokenStream::new(),
@@ -164,6 +174,7 @@ impl Value {
 		}
 	}
 	
+	/// Returns if the value is or has a nested `Value::Save`
 	pub(crate) fn contains_save(&self) -> bool {
 		match self {
 			Value::Single(_) => false,
@@ -175,6 +186,7 @@ impl Value {
 }
 
 impl Group {
+	/// Return a `TokenStream` for the type(s) returned
 	pub(crate) fn get_return_type(&self, match_type: &TokenStream) -> TokenStream {
 		match self {
 			Group::Literal(v, s) => if *s { v.get_return_type(match_type) } else { TokenStream::new() },
@@ -195,6 +207,7 @@ impl Group {
 		}
 	}
 	
+	/// Returns if the value is or has a nested `Value::Save`
 	pub(crate) fn contains_save(&self) -> bool {
 		match self {
 			Group::Literal(_, t) | Group::Kleene(_, t) | Group::Positive(_, t) | Group::Option(_, t) => t.clone()

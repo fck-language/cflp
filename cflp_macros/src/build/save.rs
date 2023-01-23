@@ -13,6 +13,7 @@ macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Pu
 macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
 
 impl SaveType {
+	/// Builds a `SaveType` into a `TokenStream` that will match `src.next()`
 	pub(crate) fn if_condition(&self, wrap: bool, map_fn: &TokenStream) -> TokenStream {
 		let mut ret = if wrap { TokenStream::from(ident!("Ok")) } else { TokenStream::new() };
 		match self {
@@ -61,6 +62,7 @@ impl SaveType {
 		}
 	}
 	
+	/// Generate the returned type for a matched section
 	pub(crate) fn to_type(&self) -> TokenStream {
 		match self {
 			SaveType::Literal(e) => TokenStream::from(e.to_token_stream()),
@@ -82,6 +84,7 @@ impl SaveType {
 }
 
 impl Value {
+	/// Builds a `Value` to a `TokenStream` and saves it
 	pub(crate) fn build_save(&self, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
@@ -113,6 +116,7 @@ impl Value {
 }
 
 impl Group {
+	/// Builds a `Group` to a `TokenStream` and saves it
 	pub(crate) fn build_save(&self, n: String, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		let mut out = TokenStream::from_iter(vec![
 			ident!("let"), ident!(&*n), punc!('=')

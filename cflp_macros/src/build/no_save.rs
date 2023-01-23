@@ -15,6 +15,7 @@ macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Pu
 macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
 
 impl Value {
+	/// Builds a `Value` to a `TokenStream` without saving it
 	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(t) => build_value_single(t, return_type, map_fn),
@@ -32,6 +33,7 @@ impl Value {
 }
 
 impl Group {
+	/// Builds a `Group` to a `TokenStream` without saving it
 	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Group::Literal(v, _) => {

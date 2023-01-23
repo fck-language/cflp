@@ -23,6 +23,7 @@ impl PartialEq<TokenType> for &Token {
 }
 
 use cflp::rule_no_types;
+// Generate only Parser impls for the already existing types
 rule_no_types!(
 	(Token, TokenType, |t| t._type.clone())
 	// Root(Option<Inner>)

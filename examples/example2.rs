@@ -24,10 +24,12 @@ impl PartialEq<TokenType> for &Token {
 }
 
 use cflp::rule;
+// Generate types and parser impls
 rule!(
 	(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
 	// Root(Vec<Expr>)
 	(Root; TokenType::OP, ([@Expr])*, TokenType::CP)
+	// Or rule. Will generate an enum
 	// Expr( u8 | char )
 	(Expr; Literal => [TokenType::Literal; u8]; [TokenType::Other; char])
 );

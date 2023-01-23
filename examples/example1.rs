@@ -22,6 +22,7 @@ impl PartialEq<TokenType> for &Token {
 }
 
 use cflp::rule;
+// Generate types and Parser impls
 rule!(
 	(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
 	// Root(Option<Inner>)

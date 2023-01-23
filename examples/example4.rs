@@ -24,10 +24,15 @@ impl PartialEq<TokenType> for &Token {
 	}
 }
 
+// You need to import cflp::Parser because the attribute macros won't do it for you
 use cflp::{parser, Parser};
+// Declare a struct Root and then use the attribute macro #[parser] to generate the Parser impl for
+// that type
 #[derive(Debug, Clone)]
 #[parser(Token, TokenType, |t| t._type.clone(); TokenType::OP, ([@Expr])*, TokenType::CP)]
 struct Root(Vec<Expr>);
+// Declare an enum (Or rule) with the #[parser] attribute to generate the Parser impl. This will
+// take the variant names from the enum in order of declaration
 #[derive(Debug, Clone)]
 #[parser(Token, TokenType, |t| t._type.clone(); [TokenType::Literal; u8]; [TokenType::Other; char])]
 enum Expr {
