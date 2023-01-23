@@ -1,109 +1,7 @@
-use proc_macro::{Delimiter, Spacing, TokenStream, Span, TokenTree};
+use proc_macro::{TokenStream, TokenTree, Spacing, Delimiter, Span};
 use quote::ToTokens;
-use syn::{Ident, Expr, Type, Visibility};
-
-/// Single or group of values
-#[derive(Clone)]
-pub(crate) enum Value {
-	/// Single value
-	Single(Expr),
-	/// Call to another rule
-	Call(Ident),
-	/// Saved value
-	Save(SaveType),
-	/// Group of values
-	Group(Vec<Group>, bool),
-}
-
-#[derive(Clone)]
-pub(crate) enum SaveType {
-	Literal(Expr),
-	Call(Ident),
-	Unwrapping(Expr, Vec<SaveUnwrapType>)
-}
-
-#[derive(Clone)]
-pub(crate) enum SaveUnwrapType {
-	Use(Type),
-	Ignore
-}
-
-impl SaveUnwrapType {
-	pub fn should_use(&self) -> bool {
-		match self {
-			SaveUnwrapType::Use(_) => true,
-			SaveUnwrapType::Ignore => false
-		}
-	}
-}
-
-/// Closures on a single or group of values
-#[derive(Clone)]
-pub(crate) enum Group {
-	/// Literal group ()
-	Literal(Value, bool),
-	/// Kleene closure ()*
-	Kleene(Value, bool),
-	/// Positive closure ()+
-	Positive(Value, bool),
-	/// Optional value ()?
-	Option(Value, bool),
-}
-
-/// Macro rule
-#[derive(Clone)]
-pub(crate) struct MacroInner {
-	/// Metadata
-	pub meta: Meta,
-	/// Rules
-	pub rules: Rules
-}
-
-/// Metadata for the macro
-#[derive(Clone)]
-pub(crate) struct Meta {
-	/// CFG parsing function visibility
-	pub struct_vis: Visibility,
-	/// Input token type
-	pub tok_type: Type,
-	/// Comparison token type
-	pub comp_type: Type,
-	/// Token to comp function
-	pub map_fn: Expr,
-	/// Traits to derive for generated structs
-	pub derived_traits: TokenStream
-}
-
-/// Macro rule
-#[derive(Clone)]
-pub(crate) struct Rule {
-	/// Rule name
-	pub name: Ident,
-	/// Rule group
-	pub inner: RuleInnerEnum
-}
-
-#[derive(Clone)]
-pub(crate) enum RuleInnerEnum {
-	Single(RuleInner),
-	Multiple(Vec<RuleInner>)
-}
-
-#[derive(Clone)]
-pub(crate) struct RuleInner{
-	pub(crate) name: Option<Ident>,
-	pub(crate) inner:  Vec<Group>
-}
-
-/// Macro rules
-#[derive(Clone)]
-pub(crate) struct Rules(pub Vec<Rule>);
-
-#[derive(Copy, Clone)]
-pub(crate) enum ReturnType {
-	Function,
-	Lifetime(u8, bool)
-}
+use syn::Visibility;
+use crate::prelude::{Group, ReturnType, Rule, RuleInner, RuleInnerEnum, SaveType, SaveUnwrapType, Value};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -113,6 +11,15 @@ macro_rules! group {
 }
 macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Alone))}; }
 macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
+
+impl SaveUnwrapType {
+	pub fn should_use(&self) -> bool {
+		match self {
+			SaveUnwrapType::Use(_) => true,
+			SaveUnwrapType::Ignore => false
+		}
+	}
+}
 
 impl ReturnType {
 	pub fn new_lifetime(&self, wrap_result: bool) -> Self {
@@ -162,7 +69,7 @@ impl Rule {
 				out.extend(TokenStream::from(self.name.to_token_stream()));
 				out.extend(inner.return_type(match_type));
 				out.extend(Some(punc!(';')));
-			},
+			}
 			RuleInnerEnum::Multiple(all_inner) => {
 				out.extend(Some(ident!("enum")));
 				out.extend(TokenStream::from(self.name.to_token_stream()));
@@ -175,7 +82,7 @@ impl Rule {
 					}
 					enum_inner.extend(vec![
 						group!(Delimiter::Parenthesis; rule.return_type(match_type)),
-						punc!(',')
+						punc!(','),
 					])
 				}
 				out.extend(Some(group!(Delimiter::Brace; enum_inner)));
@@ -240,7 +147,7 @@ impl Value {
 						}
 					}
 				}
-			},
+			}
 			Value::Group(v, s) => {
 				if !s { TokenStream::new() } else {
 					let mut out = Vec::new();
@@ -272,14 +179,14 @@ impl Group {
 		match self {
 			Group::Literal(v, s) => if *s { v.get_return_type(match_type) } else { TokenStream::new() },
 			Group::Kleene(v, s) | Group::Positive(v, s) => {
-				if !s { return TokenStream::new() }
+				if !s { return TokenStream::new(); }
 				let mut out = TokenStream::from_iter(vec![ident!("Vec"), punc!('<')]);
 				out.extend(v.get_return_type(match_type));
 				out.extend(Some(punc!('>')));
 				out
 			}
 			Group::Option(v, s) => {
-				if !s { return TokenStream::new() }
+				if !s { return TokenStream::new(); }
 				let mut out = TokenStream::from_iter(vec![ident!("Option"), punc!('<')]);
 				out.extend(v.get_return_type(match_type));
 				out.extend(Some(punc!('>')));

@@ -1,6 +1,7 @@
-//! A simple introduction
+//! An example that won't generate the types for you
 //!
-//! This example gives you a simple overview of how to use the `rule!` macro
+//! This example is functionally the same as example1 but without the type generation by making use
+//! of the `rule_no_types!` macro
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
@@ -21,23 +22,31 @@ impl PartialEq<TokenType> for &Token {
 	}
 }
 
-use cflp::rule;
-rule!(
-	(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
+use cflp::rule_no_types;
+rule_no_types!(
+	(Token, TokenType, |t| t._type.clone())
 	// Root(Option<Inner>)
 	(Root; TokenType::OP, ([@Inner])?, TokenType::CP)
 	// Inner(Vec<u8>)
 	(Inner; ([TokenType::Literal; u8])*)
 );
 
+#[derive(Debug, Clone)]
+struct Root(Option<Inner>);
+#[derive(Debug, Clone)]
+struct Inner(Vec<u8>);
+
 #[allow(unused_parens, unused_imports)]
 mod equivalent {
+	#[derive(Debug, Clone)]
+	struct Root(Option<Inner>);
+	#[derive(Debug, Clone)]
+	struct Inner(Vec<u8>);
+	// The above section is not generated. It's been included to allow the example to run.
+	// Only the impls are generated
 	use super::{Token, TokenType};
 	use cflp::rule;
 	use cflp::Parser;
-	
-	#[derive(Debug, Clone)]
-	pub(crate) struct Root(Option<(Inner)>);
 	
 	impl<'a> Parser<&'a Token, TokenType> for Root {
 		fn parse<T: Iterator<Item=&'a Token> + Clone>(
@@ -78,9 +87,6 @@ mod equivalent {
 			return Ok(Self(v_1));
 		}
 	}
-	
-	#[derive(Debug, Clone)]
-	pub(crate) struct Inner(Vec<((u8))>);
 	
 	impl<'a> Parser<&'a Token, TokenType> for Inner {
 		fn parse<T: Iterator<Item=&'a Token> + Clone>(

@@ -1,3 +1,3 @@
-This is where the `rule!` macro is defined. The code is a bit of a mess but sometimes commented. It will be cleaned up at some point in the future when the project becomes more finalised.
+This is where the `rule!`, `rule_no_types!`, and `#[parser]` macros are defined. the code is a bit messy so sorry for that.
 
 [Documentation](https://fck-language.github.io/cflp)

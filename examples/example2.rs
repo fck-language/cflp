@@ -1,3 +1,8 @@
+//! An example with an or rule
+//!
+//! This demonstrates how to have a rule that matches multiple things, and how you can name the
+//! generated variants
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
 	OP, CP,

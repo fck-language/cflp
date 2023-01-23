@@ -18,8 +18,7 @@ impl<F: Debug, E: Debug> Debug for Error<F, E> {
 }
 
 use std::fmt::{Debug, Formatter};
-/// Re-export of [`rule!`][cflp_macros::rule] \
-pub use cflp_macros::rule;
+pub use cflp_macros::{rule, rule_no_types, parser};
 
 /// Parser trait. Implemented by all generated structs from the [`rule!`] macro
 ///
