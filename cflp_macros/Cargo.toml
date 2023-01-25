@@ -3,7 +3,7 @@ name = "cflp_macros"
 version = "0.1.0"
 edition = "2021"
 authors = ["nxe <rosiegbartlett@gmail.com>"]
-repository = "https://github.com/fck-language/context-free-lang"
+repository = "https://github.com/fck-language/cflp/tree/master/cflp_macros"
 readme = "README.md"
 license = "GPL-3.0"
 
