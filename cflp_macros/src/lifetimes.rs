@@ -68,7 +68,7 @@ impl Lifetimes for Group {
 impl Lifetimes for SaveType {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			SaveType::Call(_) => {},
+			SaveType::Call(_, args) => lifetimes.extend(args.clone()),
 			SaveType::Match(t, constraints) => {
 				if constraints.iter().position(|t| t.is_type()).is_some() {
 					t.lifetimes(comp_type, lifetimes);

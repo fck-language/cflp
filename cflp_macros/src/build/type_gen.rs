@@ -31,7 +31,7 @@ impl Rule {
 					}
 					out.extend(Some(punc!('>')));
 				}
-				out.extend(inner.type_gen(&self.name, comp_type));
+				out.extend(Some(group!(Delimiter::Parenthesis; inner.type_gen(&self.name, comp_type))));
 				out.extend(Some(punc!(';')));
 			}
 			RuleInnerEnum::Multiple(all_inner) => {
@@ -79,14 +79,15 @@ impl TypeGen for RuleInner {
 				out_raw.push(group_type);
 			}
 		}
+		let mut out_raw = out_raw.iter();
 		let mut out = TokenStream::new();
-		if let Some(i) = out_raw.pop() {
-			let mut inner = i;
+		if let Some(i) = out_raw.next() {
+			let mut inner = i.clone();
 			for i in out_raw {
 				inner.extend(Some(punc!(',')));
-				inner.extend(i);
+				inner.extend(i.clone());
 			}
-			out.extend(Some(group!(Delimiter::Parenthesis; inner)))
+			out.extend(inner)
 		}
 		out
 	}
@@ -128,16 +129,13 @@ impl TypeGen for Value {
 							out.push(i.type_gen(caller, comp_type));
 						}
 					}
-					let mut inner = out.pop().unwrap();
-					if out.is_empty() {
-						inner
-					} else {
-						for i in out {
-							inner.extend(Some(punc!(',')));
-							inner.extend(i);
-						}
-						TokenStream::from(group!(Delimiter::Parenthesis; inner))
+					let mut out = out.iter();
+					let mut inner = out.next().unwrap().clone();
+					for i in out {
+						inner.extend(Some(punc!(',')));
+						inner.extend(i.clone());
 					}
+					inner
 				}
 			}
 		}
@@ -156,13 +154,14 @@ impl TypeGen for SaveType {
 							out.push(TokenStream::from(t.to_token_stream()));
 						}
 					}
-					let mut inner = out.pop().unwrap();
-					if out.is_empty() {
+					let mut out = out.iter();
+					let mut inner = out.next().unwrap().clone();
+					if out.len() == 0 {
 						inner
 					} else {
 						for i in out {
 							inner.extend(Some(punc!(',')));
-							inner.extend(i);
+							inner.extend(i.clone());
 						}
 						TokenStream::from(group!(Delimiter::Parenthesis; inner))
 					}
@@ -171,13 +170,26 @@ impl TypeGen for SaveType {
 					TokenStream::from(comp_type.to_token_stream())
 				}
 			}
-			SaveType::Call(n) if n == caller => {
-				let mut out = TokenStream::from_iter(vec![ident!("Box"), punc!('<')]);
+			SaveType::Call(n, lifetimes) => {
+				let mut out = if n == caller {
+					TokenStream::from_iter(vec![ident!("Box"), punc!('<')])
+				} else {
+					TokenStream::new()
+				};
 				out.extend(TokenStream::from(n.to_token_stream()));
-				out.extend(Some(punc!('>')));
+				let mut lifetimes = lifetimes.iter();
+				if let Some(l) = lifetimes.next() {
+					out.extend(Some(punc!('<')));
+					out.extend(TokenStream::from(l.to_token_stream()));
+					for l in lifetimes {
+						out.extend(Some(punc!(',')));
+						out.extend(TokenStream::from(l.to_token_stream()));
+					}
+					out.extend(Some(punc!('>')));
+				}
+				if n == caller { out.extend(Some(punc!('>'))); }
 				out
 			}
-			SaveType::Call(n) => TokenStream::from(n.to_token_stream())
 		}
 	}
 }

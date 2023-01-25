@@ -2,12 +2,12 @@
 
 use proc_macro::{TokenStream, TokenTree};
 use quote::ToTokens;
-use syn::{Ident, Lit, Token, Type};
+use syn::{Ident, Lifetime, Lit, Token, Type};
 use syn::parse::{Parse, ParseStream};
 
 #[derive(Clone)]
 pub(crate) enum SaveType {
-	Call(Ident),
+	Call(Ident, Vec<Lifetime>),
 	Match(Type, Vec<MatchArg>)
 }
 
@@ -43,7 +43,20 @@ impl Parse for SaveType {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		if input.peek(Token![@]) {
 			input.parse::<Token![@]>()?;
-			Ok(Self::Call(input.parse()?))
+			let ident = input.parse()?;
+			if input.is_empty() {
+				Ok(Self::Call(ident, Vec::new()))
+			} else {
+				let mut lifetimes = Vec::new();
+				input.parse::<Token![<]>()?;
+				while !input.peek(Token![>]) {
+					lifetimes.push(input.parse()?);
+					if input.peek(Token![>]) { break }
+					input.parse::<Token![,]>()?;
+				}
+				input.parse::<Token![>]>()?;
+				Ok(Self::Call(ident, lifetimes))
+			}
 		} else {
 			let ident = input.parse()?;
 			let args = if input.peek(Token![;]) {

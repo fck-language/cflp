@@ -21,7 +21,7 @@ impl Value {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function"),
-			Value::Save(SaveType::Call(rule)) => build_value_save_call(rule, return_type, caller == rule),
+			Value::Save(SaveType::Call(rule, _)) => build_value_save_call(rule, return_type, caller == rule),
 			Value::Save(SaveType::Match(ident, args)) => build_value_save_other(ident, args, return_type, map_fn),
 			Value::Group(g, _) => {
 				let inner_return_type = return_type.set_wrapped(false);
