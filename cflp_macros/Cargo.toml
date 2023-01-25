@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["nxe <rosiegbartlett@gmail.com>"]
 repository = "https://github.com/fck-language/cflp/tree/master/cflp_macros"
+description = "Proc-macro library used for cflp"
 readme = "README.md"
 license = "GPL-3.0"
 
