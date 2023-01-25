@@ -11,3 +11,10 @@ include = ["src/lib.rs", "Cargo.toml", "cflp_macros/src/*", "cflp_macros/Cargo.t
 
 [dependencies]
 cflp_macros = { path = "cflp_macros" }
+
+[dev-dependencies]
+criterion = { version = "0.4.0", features = ["html_reports"] }
+
+[[bench]]
+name = "main"
+harness = false

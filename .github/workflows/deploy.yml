@@ -28,6 +28,8 @@ jobs:
         git update-ref -d refs/heads/gh-pages
         rm -rf *
         mv ../book/* .
+        mkdir bench
+        cp -r ../../target/criterion/* ./bench
         git add .
         git commit -m "Deploy $GITHUB_SHA to gh-pages"
         git push --force --set-upstream origin gh-pages
