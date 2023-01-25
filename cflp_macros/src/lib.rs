@@ -1,11 +1,15 @@
 mod prelude;
 mod parser;
 mod build;
+mod saving;
+mod lifetimes;
 
 use proc_macro::{Delimiter, TokenStream, Spacing, Span};
+use std::collections::HashSet;
 use quote::ToTokens;
-use syn::{Type, parse_macro_input, Visibility, parse, ItemEnum, ItemStruct};
+use syn::{parse_macro_input, Visibility, parse, ItemEnum, ItemStruct, Type, Lifetime};
 use syn::spanned::Spanned;
+use crate::lifetimes::Lifetimes;
 use crate::prelude::{MacroInner, ReturnType, Rule, RuleInner, RuleInnerEnum};
 use crate::prelude::no_types::{MacroInnerNoGen, MacroInnerAttr};
 
@@ -25,11 +29,13 @@ pub fn rule(t: TokenStream) -> TokenStream {
 	let data = parse_macro_input!(t as MacroInner);
 	let mut out = TokenStream::from_iter(vec![
 		ident!("use"), ident!("cflp"), puncj!(':'), punc!(':'), ident!("Parser"), punc!(';')]);
-	let comp = TokenStream::from(data.meta.comp_type.to_token_stream());
-	let map_fn = TokenStream::from(data.meta.map_fn.to_token_stream());
 	for r in data.rules.0.iter() {
-		out.extend(build_type(r, &data.meta.struct_vis, &comp, data.meta.derived_traits.clone()));
-		out.extend(build_impl(r, &data.meta.tok_type, &comp, &map_fn))
+		out.extend(build_type(r, &data.meta.struct_vis, &data.meta.comp_type, data.meta.derived_traits.clone()));
+		out.extend(build_impl(
+			r, &data.meta.tok_type,
+			&data.meta.comp_type,
+			&TokenStream::from(data.meta.map_fn.to_token_stream())
+		))
 	}
 	out
 }
@@ -42,10 +48,9 @@ pub fn rule_no_types(t: TokenStream) -> TokenStream {
 	let data = parse_macro_input!(t as MacroInnerNoGen);
 	let mut out = TokenStream::from_iter(vec![
 		ident!("use"), ident!("cflp"), puncj!(':'), punc!(':'), ident!("Parser"), punc!(';')]);
-	let comp = TokenStream::from(data.meta.comp_type.to_token_stream());
 	let map_fn = TokenStream::from(data.meta.map_fn.to_token_stream());
 	for r in data.rules.0.iter() {
-		out.extend(build_impl(r, &data.meta.tok_type, &comp, &map_fn))
+		out.extend(build_impl(r, &data.meta.tok_type, &data.meta.comp_type, &map_fn))
 	}
 	out
 }
@@ -82,13 +87,12 @@ pub fn parser(attrs: TokenStream, mut item: TokenStream) -> TokenStream {
 			Rule { name: parsed_item.ident, inner: RuleInnerEnum::Multiple(modified_rules) }
 		}
 	};
-	let comp = TokenStream::from(macro_inner.comp_type.to_token_stream());
 	let map_fn = TokenStream::from(macro_inner.map_fn.to_token_stream());
-	item.extend(build_impl(&rule, &macro_inner.tok_type, &comp, &map_fn));
+	item.extend(build_impl(&rule, &macro_inner.tok_type, &macro_inner.comp_type, &map_fn));
 	item
 }
 
-fn build_type(r: &Rule, vis: &Visibility, comp: &TokenStream, traits: TokenStream) -> TokenStream {
+fn build_type(r: &Rule, vis: &Visibility, comp: &Type, traits: TokenStream) -> TokenStream {
 	let mut out = if traits.is_empty() {
 		TokenStream::new()
 	} else {
@@ -98,22 +102,41 @@ fn build_type(r: &Rule, vis: &Visibility, comp: &TokenStream, traits: TokenStrea
 			]),
 		])
 	};
-	out.extend(r.generate_type(vis, comp));
+	out.extend(r.type_gen(comp, vis));
 	out
 }
 
-fn build_impl(r: &Rule, tok: &Type, comp: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+fn build_impl(r: &Rule, tok: &Type, comp_type: &Type, map_fn: &TokenStream) -> TokenStream {
+	let mut lifetimes = HashSet::new();
+	r.lifetimes(comp_type, &mut lifetimes);
+	let mut impl_lifetimes = lifetimes.clone();
+	impl_lifetimes.remove(&Lifetime::new("'a", Span::mixed_site().into()));
 	let mut out = TokenStream::from_iter(vec![
-		ident!("impl"), punc!('<'), puncj!('\''), ident!("a"), punc!('>'), ident!("Parser"), punc!('<'), punc!('&'), puncj!('\''), ident!("a"),
+		ident!("impl"), punc!('<'), puncj!('\''), ident!("a")
+	]);
+	for l in impl_lifetimes {
+		out.extend(Some(punc!(',')));
+		out.extend(TokenStream::from(l.to_token_stream()));
+	}
+	out.extend(vec![
+		punc!('>'), ident!("Parser"), punc!('<'), punc!('&'), puncj!('\''), ident!("a")
 	]);
 	out.extend(TokenStream::from(tok.to_token_stream()));
 	out.extend(Some(punc!(',')));
-	out.extend(comp.clone());
+	out.extend(TokenStream::from(comp_type.to_token_stream()));
 	out.extend(vec![punc!('>'), ident!("for")]);
 	out.extend(TokenStream::from(r.name.to_token_stream()));
+	if !lifetimes.is_empty() {
+		out.extend(Some(punc!('<')));
+		for l in lifetimes {
+			out.extend(TokenStream::from(l.to_token_stream()));
+			out.extend(Some(punc!(',')));
+		}
+		out.extend(Some(punc!('>')));
+	}
 	let inner_match_stream = match &r.inner {
 		RuleInnerEnum::Single(inner) => {
-			let (mut rule_inner, return_args) = inner.build(ReturnType::Function, comp, map_fn);
+			let (mut rule_inner, return_args) = inner.build(&r.name, ReturnType::Function, comp_type, map_fn);
 			rule_inner.extend(vec![
 				ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, vec![
 					ident!("Self"), return_args
@@ -125,7 +148,7 @@ fn build_impl(r: &Rule, tok: &Type, comp: &TokenStream, map_fn: &TokenStream) ->
 			let inner_return_rule = ReturnType::Lifetime(0, false);
 			let mut iter = inners.iter().enumerate();
 			let (count, rule) = iter.next().unwrap();
-			let (mut rule_inner, return_args) = rule.build(inner_return_rule, comp, map_fn);
+			let (mut rule_inner, return_args) = rule.build(&r.name, inner_return_rule, comp_type, map_fn);
 			rule_inner.extend(vec![
 				punc!(';'), ident!("break"),
 			]);
@@ -171,7 +194,7 @@ fn build_impl(r: &Rule, tok: &Type, comp: &TokenStream, map_fn: &TokenStream) ->
 					ident!("match"),
 				]);
 				local_out.extend(inner_return_rule.get_lifetime());
-				let (mut rule_inner, return_args) = rule.build(inner_return_rule, comp, map_fn);
+				let (mut rule_inner, return_args) = rule.build(&r.name, inner_return_rule, comp_type, map_fn);
 				rule_inner.extend(vec![
 					punc!(';'), ident!("break"),
 				]);
@@ -213,7 +236,7 @@ fn build_impl(r: &Rule, tok: &Type, comp: &TokenStream, map_fn: &TokenStream) ->
 	]);
 	impl_fn.extend(TokenStream::from(tok.to_token_stream()));
 	impl_fn.extend(Some(punc!(',')));
-	impl_fn.extend(comp.clone());
+	impl_fn.extend(TokenStream::from(comp_type.to_token_stream()));
 	impl_fn.extend(vec![punc!('>'), punc!('>'), group!(Delimiter::Brace; inner_match_stream)]);
 	out.extend(Some(group!(Delimiter::Brace; impl_fn)));
 	out

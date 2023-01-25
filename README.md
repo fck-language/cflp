@@ -29,8 +29,4 @@ The structure of the examples is the same for all of them:
 
 ## Current issues
 
-- You can't currently partially match the value of an enum variant. For example, if you wanted to match `EnumName::Variant(T, E)` where the first value was some specific value and then save the second value similarly to
-  ```rust
-  if let EnumName::Variant(1, a) = var_to_check { f(a) }
-  ```
-- Errors are a bit rudimentary at the moment. If you consider the rule `(Token::T1)?, Token::T2`, the first token could be either `Token::T1` or `Token::T2`. If neither of thee are found then the returned error will say it expected `Token::T2`. A future version wil have better errors where the `expected` is a `Vec<E>` that will be calculated for each possible error position for more useful errors 
+- Errors are a bit rudimentary at the moment. If you consider the rule `(Token::T1)?, Token::T2`, the first token could be either `Token::T1` or `Token::T2`. If neither of thee are found then the returned error will say it expected `Token::T2`. A future version wil have better errors where the `expected` is a `Vec<E>` that will be calculated for each possible error position for more useful errors

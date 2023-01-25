@@ -3,6 +3,7 @@ mod impls;
 
 use proc_macro::TokenStream;
 use syn::{Ident, Expr, Type, Visibility};
+use crate::saving::SaveType;
 
 /// Single or group of values
 #[derive(Clone)]
@@ -15,19 +16,6 @@ pub(crate) enum Value {
 	Save(SaveType),
 	/// Group of values
 	Group(Vec<Group>, bool),
-}
-
-#[derive(Clone)]
-pub(crate) enum SaveType {
-	Literal(Expr),
-	Call(Ident),
-	Unwrapping(Expr, Vec<SaveUnwrapType>),
-}
-
-#[derive(Clone)]
-pub(crate) enum SaveUnwrapType {
-	Use(Type),
-	Ignore,
 }
 
 /// Closures on a single or group of values

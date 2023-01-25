@@ -2,8 +2,8 @@
 
 use proc_macro::TokenStream;
 use quote::ToTokens;
-use syn::{bracketed, Expr, Ident, parenthesized};
-use crate::prelude::{Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, SaveType, SaveUnwrapType, Value};
+use syn::{bracketed, Ident, parenthesized};
+use crate::prelude::{Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, Value};
 use syn::parse::{Parse, ParseStream};
 use syn::Token;
 use crate::prelude::no_types::{MacroInnerAttr, MacroInnerNoGen, MetaNoGen};
@@ -159,34 +159,6 @@ impl Parse for Value {
 			Ok(Value::Call(input.parse()?))
 		} else {
 			Ok(Value::Single(input.parse()?))
-		}
-	}
-}
-
-impl Parse for SaveType {
-	fn parse(input: ParseStream) -> syn::Result<Self> {
-		if input.peek(Token![@]) {
-			input.parse::<Token![@]>()?;
-			return Ok(SaveType::Call(input.parse()?))
-		}
-		let save_type = input.parse::<Expr>()?;
-		if input.peek(Token![;]) {
-			input.parse::<Token![;]>()?;
-			let inner = input.parse_terminated::<_, Token![,]>(SaveUnwrapType::parse)?;
-			Ok(SaveType::Unwrapping(save_type, inner.iter().map(|t| t.clone()).collect()))
-		} else {
-			Ok(SaveType::Literal(save_type))
-		}
-	}
-}
-
-impl Parse for SaveUnwrapType {
-	fn parse(input: ParseStream) -> syn::Result<Self> {
-		if input.peek(Token![_]) {
-			input.parse::<Token![_]>()?;
-			Ok(Self::Ignore)
-		} else {
-			Ok(Self::Use(input.parse()?))
 		}
 	}
 }

@@ -2,7 +2,7 @@
 
 use proc_macro::{Delimiter, TokenStream, Spacing, Span};
 use quote::ToTokens;
-use syn::{Expr, Ident};
+use syn::{Expr, Ident, Type};
 use crate::prelude::{Value, Group, ReturnType};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
@@ -16,7 +16,7 @@ macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::P
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Value::Single(t) => build_value_single(t, return_type, map_fn),
 			Value::Call(n) => build_value_call(n, return_type),
@@ -34,7 +34,7 @@ impl Value {
 
 impl Group {
 	/// Builds a `Group` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &TokenStream) -> TokenStream {
 		match self {
 			Group::Literal(v, _) => {
 				v.build_no_save(return_type, match_type, map_fn)
@@ -107,7 +107,7 @@ fn build_value_call(e: &Ident, return_type: ReturnType) -> TokenStream {
 /// 	}
 /// }
 /// ```
-fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &TokenStream) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let mut out = TokenStream::from_iter(vec![
 		ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'), ident!("if")
@@ -135,7 +135,7 @@ fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &TokenStre
 /// 	*src = src_old;
 /// }
 /// ```
-fn build_group_option(e: &Value, return_type: ReturnType, match_type: &TokenStream, map_fn: &TokenStream) -> TokenStream {
+fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &TokenStream) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let mut out = TokenStream::from_iter(vec![
 		ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'), ident!("if")
