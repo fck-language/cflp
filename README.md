@@ -1,6 +1,6 @@
 # Context free language parser
 
-This crate provides functionality for parsing context-free languages and was written for use with [fck](https://github.com/fck-language/fck). The [documentation](https://fck-language.github.io/cflp) will also link you to some [benchmarks](https://fck-language.github.io/cflp/bench). These were performed on a MacBook Pro with an M1 Pro CPU. The times are mainly intended for comparisons.
+This crate provides functionality for parsing context-free languages and was written for use with [fck](https://github.com/fck-language/fck). The [documentation](https://fck-language.github.io/cflp) will also link you to some [benchmarks](https://fck-language.github.io/cflp/bench/report/index.html). These were performed on a MacBook Pro with an M1 Pro CPU. The times are mainly intended for comparisons.
 
 ## Usage
 
