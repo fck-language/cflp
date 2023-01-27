@@ -10,15 +10,21 @@ pub(crate) struct MacroInnerNoGen {
 	pub rules: Rules
 }
 
-/// Macro rule with no type generation
 #[derive(Clone)]
-pub(crate) struct MacroInnerAttr {
+pub(crate) struct MacroInnerAttrMeta {
 	/// Input token type
 	pub tok_type: Type,
 	/// Comparison token type
 	pub comp_type: Type,
 	/// Token to comp function
 	pub map_fn: Expr,
+}
+
+/// Macro rule with no type generation
+#[derive(Clone)]
+pub(crate) struct MacroInnerAttr {
+	/// Metadata for the macro call
+	pub meta: MacroInnerAttrMeta,
 	/// Rules
 	pub rule: RuleInnerEnum
 }

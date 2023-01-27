@@ -10,8 +10,6 @@ license = "GPL-3.0"
 
 include = ["src/lib.rs", "Cargo.toml", "benches/**/*.rs", "examples"]
 
-[workspace]
-
 [dependencies]
 cflp_macros = { path = "cflp_macros", version = "0.1.0" }
 

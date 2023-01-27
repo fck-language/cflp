@@ -6,7 +6,7 @@ use syn::{bracketed, Ident, parenthesized};
 use crate::prelude::{Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, Value};
 use syn::parse::{Parse, ParseStream};
 use syn::Token;
-use crate::prelude::no_types::{MacroInnerAttr, MacroInnerNoGen, MetaNoGen};
+use crate::prelude::no_types::{MacroInnerAttr, MacroInnerAttrMeta, MacroInnerNoGen, MetaNoGen};
 
 impl Parse for MacroInner {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -26,14 +26,21 @@ impl Parse for MacroInnerNoGen {
 
 impl Parse for MacroInnerAttr {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
+		let meta = input.parse()?;
+		input.parse::<Token![;]>()?;
+		let rule = input.parse()?;
+		Ok(Self { meta, rule })
+	}
+}
+
+impl Parse for MacroInnerAttrMeta {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
 		let tok_type = input.parse()?;
 		input.parse::<Token![,]>()?;
 		let comp_type = input.parse()?;
 		input.parse::<Token![,]>()?;
 		let map_fn = input.parse()?;
-		input.parse::<Token![;]>()?;
-		let rule = input.parse()?;
-		Ok(Self { tok_type, comp_type, map_fn, rule })
+		Ok(Self { tok_type, comp_type, map_fn })
 	}
 }
 

@@ -7,11 +7,11 @@ mod lifetimes;
 use proc_macro::{Delimiter, TokenStream, Spacing, Span};
 use std::collections::HashSet;
 use quote::ToTokens;
-use syn::{parse_macro_input, Visibility, parse, ItemEnum, ItemStruct, Type, Lifetime};
+use syn::{parse_macro_input, Visibility, parse, ItemEnum, ItemStruct, Type, Lifetime, parse2};
 use syn::spanned::Spanned;
 use crate::lifetimes::Lifetimes;
 use crate::prelude::{MacroInner, ReturnType, Rule, RuleInner, RuleInnerEnum};
-use crate::prelude::no_types::{MacroInnerNoGen, MacroInnerAttr};
+use crate::prelude::no_types::{MacroInnerNoGen, MacroInnerAttr, MacroInnerAttrMeta};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -58,37 +58,42 @@ pub fn rule_no_types(t: TokenStream) -> TokenStream {
 /// Attribute macro to generate a `Parser` impl for the given type.\
 /// For help on the macro usage, see the [documentation](https://fck-language.github.io/cflp)
 #[proc_macro_attribute]
-pub fn parser(attrs: TokenStream, mut item: TokenStream) -> TokenStream {
-	// parse attrs into MacroAttributeInner
-	let macro_inner = parse_macro_input!(attrs as MacroInnerAttr);
-	let rule = match macro_inner.rule {
-		RuleInnerEnum::Single(t) => {
-			let parsed_item = match parse::<ItemStruct>(item.clone()) {
-				Ok(ok) => ok,
-				Err(e) => return TokenStream::from(e.to_compile_error())
-			};
-			Rule { name: parsed_item.ident, inner: RuleInnerEnum::Single(t) }
+pub fn parser(attrs: TokenStream, item: TokenStream) -> TokenStream {
+	// check for enum or struct
+	let (meta, rule, mut item) = if let Ok(i) = parse::<ItemStruct>(item.clone()) {
+		let macro_inner = parse_macro_input!(attrs as MacroInnerAttr);
+		if let RuleInnerEnum::Multiple(_) = macro_inner.rule {
+			return TokenStream::from(syn::Error::new(i.span(), "Cannot apply a rule with multiple variants to a struct").to_compile_error())
 		}
-		RuleInnerEnum::Multiple(r) => {
-			let parsed_item = match parse::<ItemEnum>(item.clone()) {
-				Ok(ok) => ok,
-				Err(e) => return TokenStream::from(e.to_compile_error())
-			};
-			if parsed_item.variants.len() != r.len() {
-				return TokenStream::from(syn::Error::new(
-					parsed_item.span(),
-					format!("Mismatched enum variants given in rule and enum. Found {} expected {}", parsed_item.variants.len(), r.len()),
-				).to_compile_error());
+		(macro_inner.meta, Rule { name: i.ident, inner: macro_inner.rule }, item)
+	} else {
+		let i = match parse::<ItemEnum>(item.clone()) {
+			Ok(i) => i,
+			Err(e) => return TokenStream::from(e.to_compile_error())
+		};
+		let mut new_item = i.clone();
+		new_item.variants.clear();
+		let meta = parse_macro_input!(attrs as MacroInnerAttrMeta);
+		let mut rules = Vec::new();
+		for mut variant in i.variants {
+			if let Some(p) = variant.attrs.iter().position(|t| t.path.get_ident() == Some(&syn::Ident::new("parser", Span::mixed_site().into()))) {
+				let attr = variant.attrs.remove(p);
+				match parse2::<RuleInner>(attr.tokens.clone()) {
+					Ok(mut r) => {
+						r.name = Some(variant.ident.clone());
+						rules.push(r)
+					}
+					Err(e) => return TokenStream::from(e.to_compile_error())
+				}
+				new_item.variants.push(variant);
+			} else {
+				return TokenStream::from(syn::Error::new(variant.span(), "Enum variant must have a parser attribute macro").to_compile_error())
 			}
-			let mut modified_rules = Vec::new();
-			for (i, t) in r.iter().zip(parsed_item.variants.iter()) {
-				modified_rules.push(RuleInner { name: Some(t.ident.clone()), inner: i.inner.clone() })
-			}
-			Rule { name: parsed_item.ident, inner: RuleInnerEnum::Multiple(modified_rules) }
 		}
+		(meta, Rule { name: i.ident, inner: RuleInnerEnum::Multiple(rules) }, TokenStream::from(new_item.to_token_stream()))
 	};
-	let map_fn = TokenStream::from(macro_inner.map_fn.to_token_stream());
-	item.extend(build_impl(&rule, &macro_inner.tok_type, &macro_inner.comp_type, &map_fn));
+	let map_fn = TokenStream::from(meta.map_fn.to_token_stream());
+	item.extend(build_impl(&rule, &meta.tok_type, &meta.comp_type, &map_fn));
 	item
 }
 
