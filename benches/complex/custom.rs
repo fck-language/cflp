@@ -1,11 +1,17 @@
 use cflp::{Error, Parser};
+
 use crate::complex::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct Root<'a>(Vec<Statement<'a>>);
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Root<'a> {
-	fn parse<T: Iterator<Item=&'a Token<'a>> + Clone>(src: &mut T) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>> where Self: Sized {
+	fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
+		src: &mut T,
+	) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
+	where
+		Self: Sized,
+	{
 		let mut out = Vec::new();
 		loop {
 			let src_old = src.clone();
@@ -13,7 +19,7 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Root<'a> {
 				Ok(s) => out.push(s),
 				Err(_) => {
 					*src = src_old;
-					break;
+					break
 				}
 			}
 		}
@@ -25,32 +31,51 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Root<'a> {
 pub enum Statement<'a> {
 	Var1(Expr<'a>, Vec<Box<Statement<'a>>>),
 	Var2(&'a str, Expr<'a>),
-	Var3(&'a str, Expr<'a>)
+	Var3(&'a str, Expr<'a>),
 }
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Statement<'a> {
-	fn parse<T: Iterator<Item=&'a Token<'a>> + Clone>(src: &mut T) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>> where Self: Sized {
+	fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
+		src: &mut T,
+	) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
+	where
+		Self: Sized,
+	{
 		let next = match src.next() {
-			None => return Err(Error{ expected: TokenType::Kwd(Kwd::If), found: None}),
-			Some(next) => next
+			None => {
+				return Err(Error {
+					expected: TokenType::Kwd(Kwd::If),
+					found: None,
+				})
+			}
+			Some(next) => next,
 		};
 		match next.t {
 			TokenType::Kwd(Kwd::If) => {
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::OP) {
-					return Err(Error{ expected: TokenType::OP, found: next})
+					return Err(Error {
+						expected: TokenType::OP,
+						found: next,
+					})
 				}
 				let condition = match Expr::parse(src) {
 					Ok(expr) => expr,
-					Err(e) => return Err(e)
+					Err(e) => return Err(e),
 				};
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::CP) {
-					return Err(Error{ expected: TokenType::OP, found: next})
+					return Err(Error {
+						expected: TokenType::OP,
+						found: next,
+					})
 				}
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::OB) {
-					return Err(Error{ expected: TokenType::OP, found: next})
+					return Err(Error {
+						expected: TokenType::OP,
+						found: next,
+					})
 				}
 				let mut statements = Vec::new();
 				loop {
@@ -59,13 +84,16 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Statement<'a> {
 						Ok(s) => statements.push(Box::new(s)),
 						Err(_) => {
 							*src = src_old;
-							break;
+							break
 						}
 					}
 				}
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::CB) {
-					return Err(Error{ expected: TokenType::OP, found: next})
+					return Err(Error {
+						expected: TokenType::OP,
+						found: next,
+					})
 				}
 				Ok(Self::Var1(condition, statements))
 			}
@@ -74,38 +102,56 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Statement<'a> {
 				let ident = if let Some(TokenType::Ident(ident)) = next.map(|t| t.t) {
 					ident
 				} else {
-					return Err(Error{ expected: TokenType::Ident(Default::default()), found: next})
+					return Err(Error {
+						expected: TokenType::Ident(Default::default()),
+						found: next,
+					})
 				};
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::Punc(Punc::Eq)) {
-					return Err(Error{ expected: TokenType::Punc(Punc::Eq), found: next})
+					return Err(Error {
+						expected: TokenType::Punc(Punc::Eq),
+						found: next,
+					})
 				}
 				let expr = match Expr::parse(src) {
 					Ok(expr) => expr,
-					Err(e) => return Err(e)
+					Err(e) => return Err(e),
 				};
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::Punc(Punc::SCol)) {
-					return Err(Error{ expected: TokenType::Punc(Punc::SCol), found: next})
+					return Err(Error {
+						expected: TokenType::Punc(Punc::SCol),
+						found: next,
+					})
 				}
 				Ok(Self::Var2(ident, expr))
 			}
 			TokenType::Ident(ident) => {
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::Punc(Punc::Eq)) {
-					return Err(Error{ expected: TokenType::Punc(Punc::Eq), found: next})
+					return Err(Error {
+						expected: TokenType::Punc(Punc::Eq),
+						found: next,
+					})
 				}
 				let expr = match Expr::parse(src) {
 					Ok(expr) => expr,
-					Err(e) => return Err(e)
+					Err(e) => return Err(e),
 				};
 				let next = src.next();
 				if next.clone().map(|t| t.t) != Some(TokenType::Punc(Punc::SCol)) {
-					return Err(Error{ expected: TokenType::Punc(Punc::SCol), found: next})
+					return Err(Error {
+						expected: TokenType::Punc(Punc::SCol),
+						found: next,
+					})
 				}
 				Ok(Self::Var3(ident, expr))
 			}
-			_ => Err(Error{ expected: TokenType::Kwd(Kwd::If), found: Some(next)})
+			_ => Err(Error {
+				expected: TokenType::Kwd(Kwd::If),
+				found: Some(next),
+			}),
 		}
 	}
 }
@@ -114,11 +160,16 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Statement<'a> {
 pub enum Expr<'a> {
 	Var1(&'a str),
 	Var2(u8),
-	Var3(Box<Expr<'a>>, Punc, Box<Expr<'a>>)
+	Var3(Box<Expr<'a>>, Punc, Box<Expr<'a>>),
 }
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Expr<'a> {
-	fn parse<T: Iterator<Item=&'a Token<'a>> + Clone>(src: &mut T) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>> where Self: Sized {
+	fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
+		src: &mut T,
+	) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
+	where
+		Self: Sized,
+	{
 		let src_old = src.clone();
 		match src.next().map(|t| t.t) {
 			Some(TokenType::Ident(ident)) => Ok(Self::Var1(ident)),
@@ -127,17 +178,20 @@ impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Expr<'a> {
 				*src = src_old;
 				let expr1 = match Expr::parse(src) {
 					Ok(expr) => expr,
-					Err(e) => return Err(e)
+					Err(e) => return Err(e),
 				};
 				let next = src.next();
 				let op = if let Some(TokenType::Punc(p)) = next.map(|t| t.t) {
 					p
 				} else {
-					return Err(Error{ expected: TokenType::Punc(Default::default()), found: next})
+					return Err(Error {
+						expected: TokenType::Punc(Default::default()),
+						found: next,
+					})
 				};
 				let expr2 = match Expr::parse(src) {
 					Ok(expr) => expr,
-					Err(e) => return Err(e)
+					Err(e) => return Err(e),
 				};
 				Ok(Self::Var3(Box::new(expr1), op, Box::new(expr2)))
 			}

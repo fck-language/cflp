@@ -2,11 +2,16 @@
 
 use proc_macro::TokenStream;
 use quote::ToTokens;
-use syn::{bracketed, Ident, parenthesized};
-use crate::prelude::{Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, Value};
-use syn::parse::{Parse, ParseStream};
-use syn::Token;
-use crate::prelude::no_types::{MacroInnerAttr, MacroInnerAttrMeta, MacroInnerNoGen, MetaNoGen};
+use syn::{
+	bracketed, parenthesized,
+	parse::{Parse, ParseStream},
+	Ident, Token,
+};
+
+use crate::prelude::{
+	no_types::{MacroInnerAttr, MacroInnerAttrMeta, MacroInnerNoGen, MetaNoGen},
+	Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, Value,
+};
 
 impl Parse for MacroInner {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
@@ -40,7 +45,11 @@ impl Parse for MacroInnerAttrMeta {
 		let comp_type = input.parse()?;
 		input.parse::<Token![,]>()?;
 		let map_fn = input.parse()?;
-		Ok(Self { tok_type, comp_type, map_fn })
+		Ok(Self {
+			tok_type,
+			comp_type,
+			map_fn,
+		})
 	}
 }
 
@@ -49,8 +58,12 @@ impl Parse for Meta {
 		let content;
 		parenthesized!(content in input);
 		macro_rules! parse_next {
-		    ($e: ident) => {let $e = content.parse()?;};
-		    ($e: ty) => {content.parse::<$e>()?;};
+			($e: ident) => {
+				let $e = content.parse()?;
+			};
+			($e: ty) => {
+				content.parse::<$e>()?;
+			};
 		}
 		parse_next!(struct_vis);
 		parse_next!(Token![,]);
@@ -67,7 +80,13 @@ impl Parse for Meta {
 		} else {
 			TokenStream::new()
 		};
-		Ok(Self { struct_vis, tok_type, comp_type, map_fn, derived_traits })
+		Ok(Self {
+			struct_vis,
+			tok_type,
+			comp_type,
+			map_fn,
+			derived_traits,
+		})
 	}
 }
 
@@ -76,15 +95,23 @@ impl Parse for MetaNoGen {
 		let content;
 		parenthesized!(content in input);
 		macro_rules! parse_next {
-		    ($e: ident) => {let $e = content.parse()?;};
-		    ($e: ty) => {content.parse::<$e>()?;};
+			($e: ident) => {
+				let $e = content.parse()?;
+			};
+			($e: ty) => {
+				content.parse::<$e>()?;
+			};
 		}
 		parse_next!(tok_type);
 		parse_next!(Token![,]);
 		parse_next!(comp_type);
 		parse_next!(Token![,]);
 		parse_next!(map_fn);
-		Ok(Self { tok_type, comp_type, map_fn })
+		Ok(Self {
+			tok_type,
+			comp_type,
+			map_fn,
+		})
 	}
 }
 
@@ -94,7 +121,10 @@ impl Parse for Rule {
 		parenthesized!(content in input);
 		let name = content.parse()?;
 		content.parse::<Token![;]>()?;
-		Ok(Self { name, inner: content.parse()? })
+		Ok(Self {
+			name,
+			inner: content.parse()?,
+		})
 	}
 }
 
@@ -108,14 +138,20 @@ impl Parse for RuleInner {
 			None
 		};
 		let mut inner = vec![input.parse()?];
-		if !input.is_empty() && !input.peek(Token![;]) { input.parse::<Token![,]>()?; }
-		loop {
-			if input.is_empty() || input.peek(Token![;]) { break }
-			inner.push(input.parse()?);
-			if input.is_empty() || input.peek(Token![;]) { break }
+		if !input.is_empty() && !input.peek(Token![;]) {
 			input.parse::<Token![,]>()?;
 		}
-		Ok(Self{ name, inner })
+		loop {
+			if input.is_empty() || input.peek(Token![;]) {
+				break
+			}
+			inner.push(input.parse()?);
+			if input.is_empty() || input.peek(Token![;]) {
+				break
+			}
+			input.parse::<Token![,]>()?;
+		}
+		Ok(Self { name, inner })
 	}
 }
 
@@ -127,9 +163,13 @@ impl Parse for RuleInnerEnum {
 		} else {
 			let mut inner_all = vec![inner];
 			loop {
-				if input.is_empty() { break }
+				if input.is_empty() {
+					break
+				}
 				input.parse::<Token![;]>()?;
-				if input.is_empty() { break }
+				if input.is_empty() {
+					break
+				}
 				inner_all.push(input.parse()?);
 			}
 			Ok(Self::Multiple(inner_all))
@@ -141,7 +181,9 @@ impl Parse for Rules {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		let mut out = Vec::new();
 		loop {
-			if input.is_empty() { break }
+			if input.is_empty() {
+				break
+			}
 			out.push(input.parse()?)
 		}
 		Ok(Self(out))
@@ -186,6 +228,5 @@ impl Parse for Group {
 		} else {
 			Ok(Group::Literal(inner, contains_save))
 		}
-		
 	}
 }

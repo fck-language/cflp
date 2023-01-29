@@ -13,12 +13,17 @@ pub struct Error<F, E> {
 
 impl<F: Debug, E: Debug> Debug for Error<F, E> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-		write!(f, "cflp::Error {{ found: {:?}, expected: {:?} }}", self.found, self.expected)
+		write!(
+			f,
+			"cflp::Error {{ found: {:?}, expected: {:?} }}",
+			self.found, self.expected
+		)
 	}
 }
 
 use std::fmt::{Debug, Formatter};
-pub use cflp_macros::{rule, rule_no_types, parser};
+
+pub use cflp_macros::{parser, rule, rule_no_types};
 
 /// Parser trait. Implemented by all generated structs from the [`rule!`] macro
 ///
@@ -28,5 +33,7 @@ pub use cflp_macros::{rule, rule_no_types, parser};
 pub trait Parser<I: PartialEq<C>, C> {
 	/// Parse an AST from a given input. Returns `Ok(Self)` if the AST is found and
 	/// `Err(cflp::Error<I, C>)` if the AST was not found
-	fn parse<T: Iterator<Item=I> + Clone>(src: &mut T) -> Result<Self, Error<I, C>> where Self: Sized;
+	fn parse<T: Iterator<Item = I> + Clone>(src: &mut T) -> Result<Self, Error<I, C>>
+	where
+		Self: Sized;
 }

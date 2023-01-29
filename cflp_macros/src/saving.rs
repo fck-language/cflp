@@ -2,30 +2,44 @@
 
 use proc_macro::{TokenStream, TokenTree};
 use quote::ToTokens;
-use syn::{Ident, Lifetime, Lit, Token, Type};
-use syn::parse::{Parse, ParseStream};
+use syn::{
+	parse::{Parse, ParseStream},
+	Ident, Lifetime, Lit, Token, Type,
+};
 
 #[derive(Clone)]
 pub(crate) enum SaveType {
 	Call(Ident, Vec<Lifetime>),
-	Match(Type, Vec<MatchArg>)
+	Match(Type, Vec<MatchArg>),
 }
 
 #[derive(Clone)]
 pub(crate) enum MatchArg {
 	Literal(Lit),
 	Ignore,
-	Type(Type)
+	Type(Type),
 }
 
 impl MatchArg {
 	pub fn is_type(&self) -> bool {
-		if let MatchArg::Type(_) = self { true } else { false }
+		if let MatchArg::Type(_) = self {
+			true
+		} else {
+			false
+		}
 	}
-	
+
 	pub fn inner_match_arm(&self, arg_index: &mut u8, returned_args: &mut Vec<TokenTree>) -> TokenStream {
-		macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, proc_macro::Span::mixed_site()))}; }
-		macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, proc_macro::Spacing::Alone))}; }
+		macro_rules! ident {
+			($t:expr) => {
+				proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, proc_macro::Span::mixed_site()))
+			};
+		}
+		macro_rules! punc {
+			($t:literal) => {
+				proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, proc_macro::Spacing::Alone))
+			};
+		}
 		match self {
 			MatchArg::Literal(e) => TokenStream::from(e.to_token_stream()),
 			MatchArg::Ignore => TokenStream::from(ident!("_")),
@@ -51,7 +65,9 @@ impl Parse for SaveType {
 				input.parse::<Token![<]>()?;
 				while !input.peek(Token![>]) {
 					lifetimes.push(input.parse()?);
-					if input.peek(Token![>]) { break }
+					if input.peek(Token![>]) {
+						break
+					}
 					input.parse::<Token![,]>()?;
 				}
 				input.parse::<Token![>]>()?;
@@ -61,7 +77,11 @@ impl Parse for SaveType {
 			let ident = input.parse()?;
 			let args = if input.peek(Token![;]) {
 				input.parse::<Token![;]>()?;
-				input.parse_terminated::<_, Token![,]>(MatchArg::parse)?.iter().map(|t| t.clone()).collect()
+				input
+					.parse_terminated::<_, Token![,]>(MatchArg::parse)?
+					.iter()
+					.map(|t| t.clone())
+					.collect()
 			} else {
 				Vec::new()
 			};
