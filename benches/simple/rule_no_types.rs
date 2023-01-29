@@ -1,5 +1,4 @@
 use cflp::rule_no_types;
-
 use crate::simple::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -8,7 +7,7 @@ pub struct Root(Expr);
 #[derive(Debug, Clone)]
 pub enum Expr {
 	Var1(u8),
-	Var2(char),
+	Var2(char)
 }
 
 rule_no_types!(

@@ -1,5 +1,4 @@
 use cflp::rule_no_types;
-
 use crate::complex::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -9,14 +8,14 @@ pub struct Root<'a>(Vec<Statement<'a>>);
 pub enum Statement<'a> {
 	Var1(Expr<'a>, Vec<Box<Statement<'a>>>),
 	Var2(&'a str, Expr<'a>),
-	Var3(&'a str, Expr<'a>),
+	Var3(&'a str, Expr<'a>)
 }
 
 #[derive(Debug, Clone)]
 pub enum Expr<'a> {
 	Var1(&'a str),
 	Var2(u8),
-	Var3(Box<Expr<'a>>, Punc, Box<Expr<'a>>),
+	Var3(Box<Expr<'a>>, Punc, Box<Expr<'a>>)
 }
 
 rule_no_types!(

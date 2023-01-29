@@ -1,9 +1,8 @@
-mod impls;
 pub(crate) mod no_types;
+mod impls;
 
 use proc_macro::TokenStream;
-use syn::{Expr, Ident, Type, Visibility};
-
+use syn::{Ident, Expr, Type, Visibility};
 use crate::saving::SaveType;
 
 /// Single or group of values

@@ -1,5 +1,4 @@
 use cflp::rule;
-
 use crate::simple::prelude::*;
 
 rule!(

@@ -1,11 +1,7 @@
 use std::collections::HashSet;
-
 use syn::{GenericArgument, Lifetime, LifetimeDef, PathArguments, Type, TypeParamBound};
-
-use crate::{
-	prelude::{Group, Rule, RuleInner, RuleInnerEnum, Value},
-	saving::{MatchArg, SaveType},
-};
+use crate::prelude::{Group, Rule, RuleInnerEnum, RuleInner, Value};
+use crate::saving::{MatchArg, SaveType};
 
 pub trait Lifetimes {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>);
@@ -61,9 +57,10 @@ impl Lifetimes for Value {
 impl Lifetimes for Group {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			Group::Literal(v, _) | Group::Kleene(v, _) | Group::Positive(v, _) | Group::Option(v, _) => {
-				v.lifetimes(comp_type, lifetimes)
-			}
+			Group::Literal(v, _)
+			| Group::Kleene(v, _)
+			| Group::Positive(v, _)
+			| Group::Option(v, _) => v.lifetimes(comp_type, lifetimes)
 		}
 	}
 }
@@ -109,11 +106,9 @@ impl Lifetimes for Type {
 					}
 				}
 			}
-			Type::Reference(r) => {
-				if let Some(l) = &r.lifetime {
-					lifetimes.insert(l.clone());
-				}
-			}
+			Type::Reference(r) => if let Some(l) = &r.lifetime {
+				lifetimes.insert(l.clone());
+			},
 			Type::Slice(s) => s.elem.lifetimes(comp_type, lifetimes),
 			Type::Tuple(t) => t.elems.iter().lifetimes(comp_type, lifetimes),
 			_ => {}
@@ -124,9 +119,7 @@ impl Lifetimes for Type {
 impl Lifetimes for GenericArgument {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			GenericArgument::Lifetime(l) => {
-				lifetimes.insert(l.clone());
-			}
+			GenericArgument::Lifetime(l) => { lifetimes.insert(l.clone()); },
 			GenericArgument::Type(t) => t.lifetimes(comp_type, lifetimes),
 			GenericArgument::Binding(b) => b.ty.lifetimes(comp_type, lifetimes),
 			GenericArgument::Constraint(c) => {
@@ -137,9 +130,7 @@ impl Lifetimes for GenericArgument {
 								bl.lifetimes.iter().lifetimes(comp_type, lifetimes)
 							}
 						}
-						TypeParamBound::Lifetime(l) => {
-							lifetimes.insert(l.clone());
-						}
+						TypeParamBound::Lifetime(l) => { lifetimes.insert(l.clone()); }
 					}
 				}
 			}

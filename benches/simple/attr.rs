@@ -1,5 +1,4 @@
 use cflp::{parser, Parser};
-
 use crate::simple::prelude::*;
 
 #[derive(Debug, Clone)]
@@ -12,5 +11,5 @@ pub enum Expr {
 	#[parser([TokenType::Value; u8])]
 	Var1(u8),
 	#[parser([TokenType::Punc; char])]
-	Var2(char),
+	Var2(char)
 }

@@ -1,36 +1,18 @@
-use std::collections::HashSet;
-
 use proc_macro::{Delimiter, TokenStream};
+use std::collections::HashSet;
 use quote::ToTokens;
-use syn::{Ident, Type, Visibility};
+use syn::{Ident, Visibility, Type};
+use crate::prelude::{Group, Rule, RuleInner, RuleInnerEnum, Value};
+use crate::saving::{MatchArg, SaveType};
+use crate::lifetimes::Lifetimes;
 
-use crate::{
-	lifetimes::Lifetimes,
-	prelude::{Group, Rule, RuleInner, RuleInnerEnum, Value},
-	saving::{MatchArg, SaveType},
-};
-
-macro_rules! ident {
-	($t:expr) => {
-		proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, proc_macro::Span::mixed_site()))
-	};
-}
+macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, proc_macro::Span::mixed_site()))}; }
 macro_rules! group {
-	($t:expr) => {
-		proc_macro::TokenTree::Group(proc_macro::Group::new($t, proc_macro::TokenStream::new()))
-	};
-	($t:expr, $s:expr) => {
-		proc_macro::TokenTree::Group(proc_macro::Group::new($t, proc_macro::TokenStream::from_iter($s)))
-	};
-	($t:expr; $s:expr) => {
-		proc_macro::TokenTree::Group(proc_macro::Group::new($t, $s))
-	};
+	($t:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, proc_macro::TokenStream::new()))};
+	($t:expr, $s:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, proc_macro::TokenStream::from_iter($s)))};
+	($t:expr; $s:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, $s))};
 }
-macro_rules! punc {
-	($t:literal) => {
-		proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, proc_macro::Spacing::Alone))
-	};
-}
+macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, proc_macro::Spacing::Alone))}; }
 
 impl Rule {
 	pub(crate) fn type_gen(&self, comp_type: &Type, vis: &Visibility) -> TokenStream {
@@ -49,9 +31,7 @@ impl Rule {
 					}
 					out.extend(Some(punc!('>')));
 				}
-				out.extend(Some(
-					group!(Delimiter::Parenthesis; inner.type_gen(&self.name, comp_type)),
-				));
+				out.extend(Some(group!(Delimiter::Parenthesis; inner.type_gen(&self.name, comp_type))));
 				out.extend(Some(punc!(';')));
 			}
 			RuleInnerEnum::Multiple(all_inner) => {
@@ -92,42 +72,40 @@ trait TypeGen {
 
 impl TypeGen for RuleInner {
 	fn type_gen(&self, caller: &Ident, comp_type: &Type) -> TokenStream {
-		let mut out = Vec::new();
+		let mut out_raw = Vec::new();
 		for group in self.inner.iter() {
 			let group_type = group.type_gen(caller, comp_type);
 			if !group_type.is_empty() {
-				out.extend(group.type_gen(caller, comp_type));
-				out.push(punc!(','));
+				out_raw.push(group_type);
 			}
 		}
-		out.pop();
-		TokenStream::from_iter(out)
+		let mut out_raw = out_raw.iter();
+		let mut out = TokenStream::new();
+		if let Some(i) = out_raw.next() {
+			let mut inner = i.clone();
+			for i in out_raw {
+				inner.extend(Some(punc!(',')));
+				inner.extend(i.clone());
+			}
+			out.extend(inner)
+		}
+		out
 	}
 }
 
 impl TypeGen for Group {
 	fn type_gen(&self, caller: &Ident, comp_type: &Type) -> TokenStream {
 		match self {
-			Group::Literal(v, s) => {
-				if *s {
-					v.type_gen(caller, comp_type)
-				} else {
-					TokenStream::new()
-				}
-			}
+			Group::Literal(v, s) => if *s { v.type_gen(caller, comp_type) } else { TokenStream::new() },
 			Group::Kleene(v, s) | Group::Positive(v, s) => {
-				if !s {
-					return TokenStream::new()
-				}
+				if !s { return TokenStream::new(); }
 				let mut out = TokenStream::from_iter(vec![ident!("Vec"), punc!('<')]);
 				out.extend(v.type_gen(caller, comp_type));
 				out.extend(Some(punc!('>')));
 				out
 			}
 			Group::Option(v, s) => {
-				if !s {
-					return TokenStream::new()
-				}
+				if !s { return TokenStream::new(); }
 				let mut out = TokenStream::from_iter(vec![ident!("Option"), punc!('<')]);
 				out.extend(v.type_gen(caller, comp_type));
 				out.extend(Some(punc!('>')));
@@ -144,18 +122,20 @@ impl TypeGen for Value {
 			Value::Call(n) => TokenStream::from(n.to_token_stream()),
 			Value::Save(inner) => inner.type_gen(caller, comp_type),
 			Value::Group(v, s) => {
-				if !s {
-					TokenStream::new()
-				} else {
+				if !s { TokenStream::new() } else {
 					let mut out = Vec::new();
 					for i in v {
 						if i.contains_save() {
-							out.extend(i.type_gen(caller, comp_type));
-							out.push(punc!(','));
+							out.push(i.type_gen(caller, comp_type));
 						}
 					}
-					out.pop();
-					TokenStream::from_iter(out)
+					let mut out = out.iter();
+					let mut inner = out.next().unwrap().clone();
+					for i in out {
+						inner.extend(Some(punc!(',')));
+						inner.extend(i.clone());
+					}
+					inner
 				}
 			}
 		}
@@ -174,7 +154,6 @@ impl TypeGen for SaveType {
 							out.push(TokenStream::from(t.to_token_stream()));
 						}
 					}
-					// return a single type without parentheses if only one type is saved, otherwise we return a tuple
 					let mut out = out.iter();
 					let mut inner = out.next().unwrap().clone();
 					if out.len() == 0 {
@@ -208,9 +187,7 @@ impl TypeGen for SaveType {
 					}
 					out.extend(Some(punc!('>')));
 				}
-				if n == caller {
-					out.extend(Some(punc!('>')));
-				}
+				if n == caller { out.extend(Some(punc!('>'))); }
 				out
 			}
 		}
