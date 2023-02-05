@@ -2,7 +2,7 @@ use proc_macro::{Delimiter, TokenStream};
 use std::collections::HashSet;
 use quote::ToTokens;
 use syn::{Ident, Visibility, Type};
-use crate::prelude::{Group, Rule, RuleInner, RuleInnerEnum, Value};
+use crate::prelude::{Group, NamedRuleInner, Rule, RuleInnerEnum, Value};
 use crate::saving::{MatchArg, SaveType};
 use crate::lifetimes::Lifetimes;
 
@@ -70,7 +70,7 @@ trait TypeGen {
 	fn type_gen(&self, caller: &Ident, comp_type: &Type) -> TokenStream;
 }
 
-impl TypeGen for RuleInner {
+impl TypeGen for NamedRuleInner {
 	fn type_gen(&self, caller: &Ident, comp_type: &Type) -> TokenStream {
 		let mut out_raw = Vec::new();
 		for group in self.inner.iter() {

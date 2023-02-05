@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use syn::{GenericArgument, Lifetime, LifetimeDef, PathArguments, Type, TypeParamBound};
-use crate::prelude::{Group, Rule, RuleInnerEnum, RuleInner, Value};
+use crate::prelude::{Group, Rule, RuleInnerEnum, Value, NamedRuleInner};
 use crate::saving::{MatchArg, SaveType};
 
 pub trait Lifetimes {
@@ -38,7 +38,7 @@ impl Lifetimes for RuleInnerEnum {
 	}
 }
 
-impl Lifetimes for RuleInner {
+impl Lifetimes for NamedRuleInner {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		self.inner.lifetimes(comp_type, lifetimes)
 	}

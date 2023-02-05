@@ -1,6 +1,6 @@
 use proc_macro::{TokenStream, TokenTree, Spacing, Delimiter, Span};
 use syn::{Ident, Type};
-use crate::prelude::{Group, ReturnType, RuleInner, Value};
+use crate::prelude::{Group, ReturnType, NamedRuleInner, Value};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
 macro_rules! group {
@@ -55,8 +55,7 @@ impl ReturnType {
 	}
 }
 
-impl RuleInner {
-	
+impl NamedRuleInner {
 	/// Build wrapper
 	pub(crate) fn build(&self, caller: &Ident, return_type: ReturnType, comp_type: &Type, map_fn: &TokenStream) -> (TokenStream, TokenTree) {
 		let mut out = TokenStream::new();

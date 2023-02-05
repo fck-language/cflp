@@ -10,7 +10,7 @@ use quote::ToTokens;
 use syn::{parse_macro_input, Visibility, parse, ItemEnum, ItemStruct, Type, Lifetime, parse2};
 use syn::spanned::Spanned;
 use crate::lifetimes::Lifetimes;
-use crate::prelude::{MacroInner, ReturnType, Rule, RuleInner, RuleInnerEnum};
+use crate::prelude::{MacroInner, NamedRuleInner, ParenthesizedRuleInner, ReturnType, Rule, RuleInnerEnum};
 use crate::prelude::no_types::{MacroInnerNoGen, MacroInnerAttr, MacroInnerAttrMeta};
 
 macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
@@ -67,6 +67,7 @@ pub fn parser(attrs: TokenStream, item: TokenStream) -> TokenStream {
 		}
 		(macro_inner.meta, Rule { name: i.ident, inner: macro_inner.rule }, item)
 	} else {
+		// parse the given token stream as an enum
 		let i = match parse::<ItemEnum>(item.clone()) {
 			Ok(i) => i,
 			Err(e) => return TokenStream::from(e.to_compile_error())
@@ -74,20 +75,18 @@ pub fn parser(attrs: TokenStream, item: TokenStream) -> TokenStream {
 		let mut new_item = i.clone();
 		new_item.variants.clear();
 		let meta = parse_macro_input!(attrs as MacroInnerAttrMeta);
+		// for each variant, parse the #[parser(...)] attribute as a RuleInner and add it to an accumulator
 		let mut rules = Vec::new();
 		for mut variant in i.variants {
 			if let Some(p) = variant.attrs.iter().position(|t| t.path.get_ident() == Some(&syn::Ident::new("parser", Span::mixed_site().into()))) {
 				let attr = variant.attrs.remove(p);
-				match parse2::<RuleInner>(attr.tokens.clone()) {
-					Ok(mut r) => {
-						r.name = Some(variant.ident.clone());
-						rules.push(r)
-					}
+				match parse2::<ParenthesizedRuleInner>(attr.tokens) {
+					Ok(pri) => rules.push(NamedRuleInner{ name: Some(variant.ident.clone()), inner: pri.0.0 }),
 					Err(e) => return TokenStream::from(e.to_compile_error())
 				}
 				new_item.variants.push(variant);
 			} else {
-				return TokenStream::from(syn::Error::new(variant.span(), "Enum variant must have a parser attribute macro").to_compile_error())
+				return TokenStream::from(syn::Error::new(variant.span(), "Enum variant must have a parser attribute macro to define the variant rule").to_compile_error())
 			}
 		}
 		(meta, Rule { name: i.ident, inner: RuleInnerEnum::Multiple(rules) }, TokenStream::from(new_item.to_token_stream()))
@@ -96,6 +95,8 @@ pub fn parser(attrs: TokenStream, item: TokenStream) -> TokenStream {
 	item.extend(build_impl(&rule, &meta.tok_type, &meta.comp_type, &map_fn));
 	item
 }
+
+
 
 fn build_type(r: &Rule, vis: &Visibility, comp: &Type, traits: TokenStream) -> TokenStream {
 	let mut out = if traits.is_empty() {

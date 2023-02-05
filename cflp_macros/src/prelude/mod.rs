@@ -72,16 +72,32 @@ pub(crate) struct Rule {
 #[derive(Clone)]
 pub(crate) enum RuleInnerEnum {
 	/// Single rule option (struct type)
-	Single(RuleInner),
+	Single(NamedRuleInner),
 	/// Multiple rule options (enum type)
-	Multiple(Vec<RuleInner>),
+	Multiple(Vec<NamedRuleInner>),
 }
 
-/// Rule inner. Named wrapper around a `Vec<Group>`
+/// Named version of the [`RuleInner`] struct
 #[derive(Clone)]
-pub(crate) struct RuleInner {
+pub(crate) struct NamedRuleInner {
 	pub(crate) name: Option<Ident>,
 	pub(crate) inner: Vec<Group>,
+}
+
+/// Rule inner. Wrapper around a `Vec<Group>`
+#[derive(Clone)]
+pub(crate) struct RuleInner(pub(crate) Vec<Group>);
+
+/// Wrapper around a [`RuleInner`] to allow parsing to use `parenthesized!`
+pub(crate) struct ParenthesizedRuleInner(pub RuleInner);
+
+impl From<RuleInner> for NamedRuleInner {
+	fn from(value: RuleInner) -> Self {
+		Self {
+			name: None,
+			inner: value.0
+		}
+	}
 }
 
 /// Lifetime enum. Used to determine where errors should return to and if a successful result should

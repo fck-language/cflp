@@ -3,7 +3,7 @@
 use proc_macro::TokenStream;
 use quote::ToTokens;
 use syn::{bracketed, Ident, parenthesized};
-use crate::prelude::{Group, MacroInner, Meta, Rule, RuleInner, RuleInnerEnum, Rules, Value};
+use crate::prelude::{Group, MacroInner, Meta, NamedRuleInner, ParenthesizedRuleInner, Rule, RuleInner, RuleInnerEnum, Rules, Value};
 use syn::parse::{Parse, ParseStream};
 use syn::Token;
 use crate::prelude::no_types::{MacroInnerAttr, MacroInnerAttrMeta, MacroInnerNoGen, MetaNoGen};
@@ -98,7 +98,7 @@ impl Parse for Rule {
 	}
 }
 
-impl Parse for RuleInner {
+impl Parse for NamedRuleInner {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
 		let name = if input.peek2(Token![=>]) {
 			let name = input.parse()?;
@@ -107,6 +107,12 @@ impl Parse for RuleInner {
 		} else {
 			None
 		};
+		Ok(Self{ name, inner: input.parse::<RuleInner>()?.0 })
+	}
+}
+
+impl Parse for RuleInner {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
 		let mut inner = vec![input.parse()?];
 		if !input.is_empty() && !input.peek(Token![;]) { input.parse::<Token![,]>()?; }
 		loop {
@@ -115,17 +121,29 @@ impl Parse for RuleInner {
 			if input.is_empty() || input.peek(Token![;]) { break }
 			input.parse::<Token![,]>()?;
 		}
-		Ok(Self{ name, inner })
+		Ok(Self ( inner ))
+	}
+}
+
+impl Parse for ParenthesizedRuleInner {
+	fn parse(input: ParseStream) -> syn::Result<Self> {
+		let inner;
+		parenthesized!(inner in input);
+		Ok(Self(inner.parse()?))
 	}
 }
 
 impl Parse for RuleInnerEnum {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
-		let inner = input.parse()?;
+		let inner: NamedRuleInner = input.parse()?;
 		if input.is_empty() {
-			Ok(Self::Single(inner))
+			if inner.name.is_some() {
+				Err(syn::Error::new(input.span(), "Named rules are not allowed for structs"))
+			} else {
+				Ok(Self::Single(inner))
+			}
 		} else {
-			let mut inner_all = vec![inner];
+			let mut inner_all = vec![inner.into()];
 			loop {
 				if input.is_empty() { break }
 				input.parse::<Token![;]>()?;
