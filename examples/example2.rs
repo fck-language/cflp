@@ -2,7 +2,7 @@
 //!
 //! This example is an equivalent to example2 but using the `#[parser]` attribute macro and showing
 //! how to change the used enum variant names. If you want the equivalent code have a look in
-//! `example2::equivalent`
+//! [`expanded`]
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokType {
@@ -30,8 +30,7 @@ impl NodeData<usize> for Token {
 }
 
 mod nodes {
-    // You need to import cflp::Parser because the attribute macros won't do it for you
-    use cflp::{Parser, NodeWrapper};
+    use cflp::NodeWrapper;
     use crate::{Token, TokType};
     
     /// # Root match struct
@@ -71,6 +70,10 @@ mod nodes {
 }
 
 mod expanded {
+    //! Expanded [`Parser`](cflp::Parser) impls from the derive macro
+    //!
+    //! *Please note*: This section may be highlighted as including errors. The impls do not contain
+    //! errors. I don't know why this happens
     // You need to import cflp::Parser because the attribute macros won't do it for you
     use cflp::{Parser, NodeWrapper};
     use crate::{Token, TokType};
