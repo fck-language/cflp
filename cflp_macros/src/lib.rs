@@ -1,249 +1,213 @@
+//! # cflp macros
+//!
+//! Derive macro for `cflp::Parser` trait
+#![cfg_attr(
+    docs,
+    feature(doc_auto_cfg),
+    deny(rustdoc::broken_intra_doc_links, missing_docs)
+)]
+#![cfg_attr(
+    not(docs),
+    warn(rustdoc::broken_intra_doc_links, missing_docs)
+)]
 mod prelude;
-mod parser;
 mod build;
-mod saving;
 mod lifetimes;
 
-use proc_macro::{Delimiter, TokenStream, Spacing, Span};
+use proc_macro::TokenStream as pmTS;
+use proc_macro2::{Span, TokenStream};
 use std::collections::HashSet;
-use quote::ToTokens;
-use syn::{parse_macro_input, Visibility, parse, ItemEnum, ItemStruct, Type, Lifetime, parse2};
-use syn::spanned::Spanned;
-use crate::lifetimes::Lifetimes;
-use crate::prelude::{MacroInner, NamedRuleInner, ParenthesizedRuleInner, ReturnType, Rule, RuleInnerEnum};
-use crate::prelude::no_types::{MacroInnerNoGen, MacroInnerAttr, MacroInnerAttrMeta};
+use quote::{format_ident, quote, ToTokens};
+use syn::{parse, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields};
+use crate::{
+	lifetimes::Lifetimes,
+	prelude::{Meta, StructParserAttribute, MacroInner, RuleInner, Rules, ReturnType}
+};
+use crate::prelude::{Group, RuleInnerMatch, SplitRule};
 
-macro_rules! ident { ($t:expr) => {proc_macro::TokenTree::Ident(proc_macro::Ident::new($t, Span::mixed_site()))}; }
-macro_rules! group {
-	($t:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, TokenStream::new()))};
-	($t:expr, $s:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, TokenStream::from_iter($s)))};
-	($t:expr; $s:expr) => {proc_macro::TokenTree::Group(proc_macro::Group::new($t, $s))};
-}
-macro_rules! punc { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Alone))}; }
-macro_rules! puncj { ($t:literal) => {proc_macro::TokenTree::Punct(proc_macro::Punct::new($t, Spacing::Joint))}; }
-
-/// This macro generates types and implements the `Parser` trait for those types.\
-/// For help on the macro usage, see the [documentation](https://fck-language.github.io/cflp)
-#[proc_macro]
-pub fn rule(t: TokenStream) -> TokenStream {
-	let data = parse_macro_input!(t as MacroInner);
-	let mut out = TokenStream::from_iter(vec![
-		ident!("use"), ident!("cflp"), puncj!(':'), punc!(':'), ident!("Parser"), punc!(';')]);
-	for r in data.rules.0.iter() {
-		out.extend(build_type(r, &data.meta.struct_vis, &data.meta.comp_type, data.meta.derived_traits.clone()));
-		out.extend(build_impl(
-			r, &data.meta.tok_type,
-			&data.meta.comp_type,
-			&TokenStream::from(data.meta.map_fn.to_token_stream())
-		))
-	}
-	out
+/// Derive macro for `cflp::Parser`
+#[proc_macro_derive(Parser, attributes(parser))]
+pub fn derive_parser(item: pmTS) -> pmTS {
+	let input = match get_rules(item) {
+		Ok(ok) => ok,
+		Err(err) => return pmTS::from(err.to_compile_error().to_token_stream())
+	};
+	pmTS::from(build_impl(input.rules, input.meta))
 }
 
-/// This macro implements the `Parser` trait for the given rules. It does not
-/// generate any types.\
-/// For help on the macro usage, see the [documentation](https://fck-language.github.io/cflp)
-#[proc_macro]
-pub fn rule_no_types(t: TokenStream) -> TokenStream {
-	let data = parse_macro_input!(t as MacroInnerNoGen);
-	let mut out = TokenStream::from_iter(vec![
-		ident!("use"), ident!("cflp"), puncj!(':'), punc!(':'), ident!("Parser"), punc!(';')]);
-	let map_fn = TokenStream::from(data.meta.map_fn.to_token_stream());
-	for r in data.rules.0.iter() {
-		out.extend(build_impl(r, &data.meta.tok_type, &data.meta.comp_type, &map_fn))
-	}
-	out
-}
-
-/// Attribute macro to generate a `Parser` impl for the given type.\
-/// For help on the macro usage, see the [documentation](https://fck-language.github.io/cflp)
-#[proc_macro_attribute]
-pub fn parser(attrs: TokenStream, item: TokenStream) -> TokenStream {
-	// check for enum or struct
-	let (meta, rule, mut item) = if let Ok(i) = parse::<ItemStruct>(item.clone()) {
-		let macro_inner = parse_macro_input!(attrs as MacroInnerAttr);
-		if let RuleInnerEnum::Multiple(_) = macro_inner.rule {
-			return TokenStream::from(syn::Error::new(i.span(), "Cannot apply a rule with multiple variants to a struct").to_compile_error())
+/// Get the arguments supplied in the `#[parser(...)]` helper attribute on te item deriving `Parser`
+fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
+	if let Ok(item) = parse::<ItemStruct>(item.clone()) {
+		// match: #[parser(iter_type, cmp_type, tok_map, is_wrapped; match)]
+		if let Some(attr) = item.attrs.iter().position(|attr| attr.path().get_ident().map(|i| i.to_string()) == Some("parser".to_string())) {
+			let attr = &item.attrs[attr];
+			let mut out = attr.parse_args::<StructParserAttribute>()?;
+			out.meta._self = item.ident.clone();
+			let rules = match &item.fields {
+				Fields::Named(fields) => RuleInnerMatch::Named(
+					fields.named.iter().map(|t| t.ident.clone().unwrap()).collect(),
+					out.rule
+				),
+				Fields::Unnamed(_) => RuleInnerMatch::Unnamed(out.rule),
+				Fields::Unit => return Err(Error::new(item.span(), "Cannot derive the Parser trait on a unit struct")),
+			};
+			if rules.count_matches() != item.fields.len() {
+				return Err(Error::new(attr.span(), "Attribute number of save groups does not match the number of fields"))
+			}
+			Ok(MacroInner {
+				meta: out.meta, rules: Rules::Single(RuleInner {
+					name: Path::from(format_ident!("Self")),
+					inner: rules
+				}),
+			})
+		} else {
+			return Err(Error::new(item.span(), "Parser derive requires a #[parser(...)] attribute"))
 		}
-		(macro_inner.meta, Rule { name: i.ident, inner: macro_inner.rule }, item)
 	} else {
-		// parse the given token stream as an enum
-		let i = match parse::<ItemEnum>(item.clone()) {
-			Ok(i) => i,
-			Err(e) => return TokenStream::from(e.to_compile_error())
+		let mut item = parse::<ItemEnum>(item.clone())?;
+		let attr = if let Some(attr) = item.attrs.iter().position(|attr| attr.path().get_ident().map(|i| i.to_string()) == Some("parser".to_string())) {
+			item.attrs.remove(attr)
+		} else {
+			return Err(Error::new(item.span(), "Parser derive requires a #[parser(...)] attribute"))
 		};
-		let mut new_item = i.clone();
-		new_item.variants.clear();
-		let meta = parse_macro_input!(attrs as MacroInnerAttrMeta);
-		// for each variant, parse the #[parser(...)] attribute as a RuleInner and add it to an accumulator
+		let mut meta = attr.parse_args::<Meta>()?;
+		meta._self = item.ident.clone();
+		// for each variant, parse the #[parser(...)] attribute as a RuleInnerMatch and add it to an accumulator
 		let mut rules = Vec::new();
-		for mut variant in i.variants {
-			if let Some(p) = variant.attrs.iter().position(|t| t.path.get_ident() == Some(&syn::Ident::new("parser", Span::mixed_site().into()))) {
-				let attr = variant.attrs.remove(p);
-				match parse2::<ParenthesizedRuleInner>(attr.tokens) {
-					Ok(pri) => rules.push(NamedRuleInner{ name: Some(variant.ident.clone()), inner: pri.0.0 }),
-					Err(e) => return TokenStream::from(e.to_compile_error())
-				}
-				new_item.variants.push(variant);
-			} else {
-				return TokenStream::from(syn::Error::new(variant.span(), "Enum variant must have a parser attribute macro to define the variant rule").to_compile_error())
-			}
-		}
-		(meta, Rule { name: i.ident, inner: RuleInnerEnum::Multiple(rules) }, TokenStream::from(new_item.to_token_stream()))
-	};
-	let map_fn = TokenStream::from(meta.map_fn.to_token_stream());
-	item.extend(build_impl(&rule, &meta.tok_type, &meta.comp_type, &map_fn));
-	item
-}
-
-
-
-fn build_type(r: &Rule, vis: &Visibility, comp: &Type, traits: TokenStream) -> TokenStream {
-	let mut out = if traits.is_empty() {
-		TokenStream::new()
-	} else {
-		TokenStream::from_iter(vec![
-			punc!('#'), group!(Delimiter::Bracket, vec![
-				ident!("derive"), group!(Delimiter::Parenthesis; traits.clone())
-			]),
-		])
-	};
-	out.extend(r.type_gen(comp, vis));
-	out
-}
-
-fn build_impl(r: &Rule, tok: &Type, comp_type: &Type, map_fn: &TokenStream) -> TokenStream {
-	let mut lifetimes = HashSet::new();
-	r.lifetimes(comp_type, &mut lifetimes);
-	let mut impl_lifetimes = lifetimes.clone();
-	impl_lifetimes.remove(&Lifetime::new("'a", Span::mixed_site().into()));
-	let mut out = TokenStream::from_iter(vec![
-		ident!("impl"), punc!('<'), puncj!('\''), ident!("a")
-	]);
-	for l in impl_lifetimes {
-		out.extend(Some(punc!(',')));
-		out.extend(TokenStream::from(l.to_token_stream()));
-	}
-	out.extend(vec![
-		punc!('>'), ident!("Parser"), punc!('<'), punc!('&'), puncj!('\''), ident!("a")
-	]);
-	out.extend(TokenStream::from(tok.to_token_stream()));
-	out.extend(Some(punc!(',')));
-	out.extend(TokenStream::from(comp_type.to_token_stream()));
-	out.extend(vec![punc!('>'), ident!("for")]);
-	out.extend(TokenStream::from(r.name.to_token_stream()));
-	if !lifetimes.is_empty() {
-		out.extend(Some(punc!('<')));
-		for l in lifetimes {
-			out.extend(TokenStream::from(l.to_token_stream()));
-			out.extend(Some(punc!(',')));
-		}
-		out.extend(Some(punc!('>')));
-	}
-	let inner_match_stream = match &r.inner {
-		RuleInnerEnum::Single(inner) => {
-			let (mut rule_inner, return_args) = inner.build(&r.name, ReturnType::Function, comp_type, map_fn);
-			rule_inner.extend(vec![
-				ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, vec![
-					ident!("Self"), return_args
-				]),
-			]);
-			rule_inner
-		}
-		RuleInnerEnum::Multiple(inners) => {
-			let inner_return_rule = ReturnType::Lifetime(0, false);
-			let mut iter = inners.iter().enumerate();
-			let (count, rule) = iter.next().unwrap();
-			let (mut rule_inner, return_args) = rule.build(&r.name, inner_return_rule, comp_type, map_fn);
-			rule_inner.extend(vec![
-				punc!(';'), ident!("break"),
-			]);
-			rule_inner.extend(inner_return_rule.get_lifetime());
-			
-			// expression inside the final `break Ok` statement
-			let mut ok_inner = TokenStream::from_iter(vec![
-				ident!("Self"), puncj!(':'), punc!(':'),
-			]);
-			if let Some(name) = &rule.name {
-				ok_inner.extend(TokenStream::from(name.to_token_stream()))
-			} else {
-				ok_inner.extend(Some(ident!(&*format!("Var{}", count + 1))))
-			}
-			ok_inner.extend(Some(return_args));
-			
-			rule_inner.extend(vec![
-				ident!("Ok"), group!(Delimiter::Parenthesis; ok_inner),
-			]);
-			let mut local_out = TokenStream::from_iter(vec![
-				ident!("let"), ident!("first_err"), punc!(';'),
-				ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
-				ident!("match"),
-			]);
-			local_out.extend(inner_return_rule.get_lifetime());
-			local_out.extend(TokenStream::from_iter(vec![
-				punc!(':'), group!(Delimiter::Brace; rule_inner), group!(Delimiter::Brace, vec![
-					ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
-					ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("e"))), puncj!('='), punc!('>'), group!(Delimiter::Brace, vec![
-						ident!("first_err"), punc!('='), ident!("e"), punc!(';'),
-						punc!('*'), ident!("src"), punc!('='), ident!("src_old")
-					])
-				]),
-			]));
-			for (count, rule) in iter {
-				// let src_old = src.clone();
-				// match loop { $rule_inner break Ok(Self::Var${count+1}(return_args) } {
-				//     Ok(t) => return Ok(t),
-				//     Err(_) => *src = src_old
-				// }
-				local_out.extend(vec![
-					ident!("let"), ident!("src_old"), punc!('='), ident!("src"), punc!('.'), ident!("clone"), group!(Delimiter::Parenthesis), punc!(';'),
-					ident!("match"),
-				]);
-				local_out.extend(inner_return_rule.get_lifetime());
-				let (mut rule_inner, return_args) = rule.build(&r.name, inner_return_rule, comp_type, map_fn);
-				rule_inner.extend(vec![
-					punc!(';'), ident!("break"),
-				]);
-				rule_inner.extend(inner_return_rule.get_lifetime());
-				let mut ok_inner = TokenStream::from_iter(vec![ident!("Self"), puncj!(':'), punc!(':')]);
-				if let Some(name) = &rule.name {
-					ok_inner.extend(TokenStream::from(name.to_token_stream()))
+		for variant in item.variants.iter() {
+			if let Some(p) = variant.attrs.iter().position(|t| t.path().get_ident().map(|i| i.to_string()) == Some("parser".to_string())) {
+				let attr = &variant.attrs[p];
+				let name = Path {
+					leading_colon: None,
+					segments: Punctuated::<_, Token![::]>::from_iter([PathSegment::from(item.ident.clone()), PathSegment::from(variant.ident.clone())]),
+				};
+				let inner = attr.parse_args_with(Punctuated::<Group, Token![,]>::parse_terminated)?;
+				let mut inner = inner.iter().collect::<Vec<_>>();
+				let inner = if inner.len() == 1 {
+					SplitRule::Single(Box::new(inner[0].clone()))
 				} else {
-					ok_inner.extend(Some(ident!(&*format!("Var{}", count + 1))))
+					let last = inner.pop().unwrap().clone();
+					let first = inner.remove(0).clone();
+					SplitRule::Other { start: Box::new(first), end: Box::new(last), middle: inner.iter().map(|t| t.clone().clone()).collect() }
+				};
+				let inner = match &variant.fields {
+					Fields::Named(fields) => RuleInnerMatch::Named(
+						fields.named.iter().map(|f| f.ident.clone().unwrap()).collect(),
+						inner
+					),
+					_ => RuleInnerMatch::Unnamed(inner)
+				};
+				if inner.count_matches() != variant.fields.len() {
+					return Err(Error::new(variant.span(), "Variant number of save groups does not match the number of fields of the variant"))
 				}
-				ok_inner.extend(Some(return_args));
-				rule_inner.extend(vec![
-					ident!("Ok"), group!(Delimiter::Parenthesis; ok_inner)
-				]);
-				local_out.extend(TokenStream::from_iter(vec![
-					punc!(':'), group!(Delimiter::Brace; rule_inner), group!(Delimiter::Brace, vec![
-						ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), puncj!('='), punc!('>'), ident!("return"), ident!("Ok"), group!(Delimiter::Parenthesis, Some(ident!("t"))), punc!(','),
-						ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("_"))), puncj!('='), punc!('>'), punc!('*'), ident!("src"), punc!('='), ident!("src_old")
-					]),
-				]));
+				rules.push(RuleInner { name, inner });
+			} else {
+				return Err(Error::new(variant.span(), "Enum variant must have a #[parser(...)] attribute macro to define the variant rule"))
 			}
-			local_out.extend(vec![
-				ident!("return"), ident!("Err"), group!(Delimiter::Parenthesis, Some(ident!("first_err"))),
-			]);
+		}
+		if rules.len() == 0 {
+			Err(Error::new(item.span(), "Enum must have at least one field"))
+		} else {
+			let f = rules.remove(0);
+			Ok(MacroInner { meta, rules: Rules::Multiple { first: f, rem: rules } })
+		}
+	}
+}
+
+fn build_impl(r: Rules, meta: Meta) -> TokenStream {
+	let mut lifetimes = HashSet::new();
+	r.lifetimes(&meta.cmp_type, &mut lifetimes);
+	
+	let mut impl_lifetimes = lifetimes.clone();
+	impl_lifetimes.remove(&Lifetime::new("'a", Span::mixed_site()));
+	let impl_lifetimes = Punctuated::<_, Token![,]>::from_iter(impl_lifetimes);
+	let _self = &meta._self;
+	let ret_type = if let Some(ty) = &meta.wrapped {
+		quote!{ cflp::NodeWrapper<#_self, #ty> }
+	} else {
+		quote!{ Self }
+	};
+	let lifetimes = Punctuated::<_, Token![,]>::from_iter(lifetimes);
+	let _self = if !lifetimes.is_empty() {
+		let _self = meta._self;
+		quote!{ #_self<#lifetimes> }
+	} else { meta._self.to_token_stream() };
+	let inner_match_stream = match r {
+		Rules::Single(inner) => {
+			let (rule_inner, return_args) = inner.build(ReturnType::Function, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+			if meta.wrapped.is_some() {
+				quote!{
+					use cflp::NodeData;
+					let mut start = Default::default(); let mut end = Default::default();
+					#rule_inner;
+					return Ok(cflp::NodeWrapper{ node: Self #return_args, start, end })
+				}
+			} else {
+				quote!{
+					#rule_inner;
+					return Ok(Self #return_args)
+				}
+			}
+		}
+		Rules::Multiple { first, rem } => {
+			let inner_return_rule = ReturnType::Lifetime(0, false);
+			let (mut rule_inner, return_args) = first.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+			
+			let lifetime = inner_return_rule.get_lifetime();
+			let name = &first.name;
+			rule_inner.extend(quote!{; break #lifetime Ok(#name #return_args)});
+			
+			let (pre, ok) = if meta.wrapped.is_some() {
+				(
+					quote!{
+						use cflp::NodeData;
+						let mut start = Default::default();
+						let mut end = Default::default();
+					}, quote!{
+						NodeWrapper { node: t, start, end }
+					}
+				)
+			} else { (quote!{}, quote!{ t }) };
+			let mut local_out = quote!{
+				#pre
+				let first_err;
+				let src_old = src.clone();
+				match #lifetime: { #rule_inner } {
+					Ok(t) => return Ok(#ok),
+					Err(e) => {
+						first_err = e;
+						*src = src_old;
+					}
+				}
+			};
+			for rule in rem.iter() {
+				let (mut rule_inner, return_args) = rule.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+				let name = &rule.name;
+				rule_inner.extend(quote!{
+					; break #lifetime Ok(#name #return_args)
+				});
+				let lifetime = inner_return_rule.get_lifetime();
+				local_out.extend(quote!{
+					let src_old = src.clone();
+					match #lifetime: { #rule_inner } {
+						Ok(t) => return Ok(#ok),
+						Err(_) => *src = src_old
+					}
+				});
+			}
+			local_out.extend(quote!{return Err(first_err)});
 			local_out
 		}
 	};
-	let mut impl_fn = TokenStream::from_iter(vec![
-		ident!("fn"), ident!("parse"), punc!('<'),
-		ident!("T"), punc!(':'), ident!("Iterator"), punc!('<'), ident!("Item"), punc!('='),
-		punc!('&'), puncj!('\''), ident!("a"),
-	]);
-	impl_fn.extend(TokenStream::from(tok.to_token_stream()));
-	impl_fn.extend(vec![
-		punc!('>'), punc!('+'), ident!("Clone"), punc!('>'), group!(Delimiter::Parenthesis, vec![
-		ident!("src"), punc!(':'), punc!('&'), ident!("mut"), ident!("T")
-	]), puncj!('-'), punc!('>'), ident!("Result"), punc!('<'), ident!("Self"), punc!(','),
-		ident!("cflp"), puncj!(':'), punc!(':'), ident!("Error"), punc!('<'), punc!('&'), puncj!('\''), ident!("a"),
-	]);
-	impl_fn.extend(TokenStream::from(tok.to_token_stream()));
-	impl_fn.extend(Some(punc!(',')));
-	impl_fn.extend(TokenStream::from(comp_type.to_token_stream()));
-	impl_fn.extend(vec![punc!('>'), punc!('>'), group!(Delimiter::Brace; inner_match_stream)]);
-	out.extend(Some(group!(Delimiter::Brace; impl_fn)));
-	out
+	let tok_type = meta.tok_type;
+	let cmp_type = meta.cmp_type;
+	quote!{
+		#[automatically_derived]
+		impl <'a, #impl_lifetimes> cflp::Parser<&'a #tok_type, #cmp_type, #ret_type> for #_self {
+			fn parse<T: Iterator<Item=&'a #tok_type> + Clone>(src: &mut T) -> Result<#ret_type, cflp::Error<&'a #tok_type, #cmp_type>> {
+				
+				#inner_match_stream
+			}
+		}
+	}
 }

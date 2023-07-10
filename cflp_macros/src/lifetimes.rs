@@ -1,7 +1,6 @@
 use std::collections::HashSet;
-use syn::{GenericArgument, Lifetime, LifetimeDef, PathArguments, Type, TypeParamBound};
-use crate::prelude::{Group, Rule, RuleInnerEnum, Value, NamedRuleInner};
-use crate::saving::{MatchArg, SaveType};
+use syn::{GenericArgument, GenericParam, Lifetime, LifetimeParam, PathArguments, PathSegment, Type, TypeParamBound};
+use crate::prelude::{Group, Rules, Value, RuleInner, SaveType, SplitRule};
 
 pub trait Lifetimes {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>);
@@ -23,33 +22,60 @@ impl<'a, T: Lifetimes> Lifetimes for syn::punctuated::Iter<'a, T> {
 	}
 }
 
-impl Lifetimes for Rule {
-	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
-		self.inner.lifetimes(comp_type, lifetimes)
-	}
-}
-
-impl Lifetimes for RuleInnerEnum {
+impl Lifetimes for Rules {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			RuleInnerEnum::Single(s) => s.lifetimes(comp_type, lifetimes),
-			RuleInnerEnum::Multiple(m) => m.lifetimes(comp_type, lifetimes),
+			Rules::Single(inner) => inner.lifetimes(comp_type, lifetimes),
+			Rules::Multiple { first, rem} => {
+				first.lifetimes(comp_type, lifetimes);
+				for i in rem.iter() {
+					i.lifetimes(comp_type, lifetimes)
+				}
+			}
 		}
 	}
 }
 
-impl Lifetimes for NamedRuleInner {
+impl Lifetimes for RuleInner {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
-		self.inner.lifetimes(comp_type, lifetimes)
+		self.name.segments.iter().for_each(|p| p.lifetimes(comp_type, lifetimes));
+	}
+}
+
+impl Lifetimes for PathSegment {
+	fn lifetimes(&self, _comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
+		match &self.arguments {
+			PathArguments::AngleBracketed(inner) => {
+				for part in inner.args.iter() {
+					if let GenericArgument::Lifetime(l) = part {
+						lifetimes.insert(l.clone());
+					}
+				}
+			}
+			_ => {}
+		}
 	}
 }
 
 impl Lifetimes for Value {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			Value::Save(s) => s.lifetimes(comp_type, lifetimes),
+			Value::Save { group, .. } => group.lifetimes(comp_type, lifetimes),
 			Value::Group(g, _) => g.lifetimes(comp_type, lifetimes),
 			_ => {}
+		}
+	}
+}
+
+impl Lifetimes for SplitRule {
+	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
+		match self {
+			SplitRule::Single(inner) => inner.lifetimes(comp_type, lifetimes),
+			SplitRule::Other { start, middle, end } => {
+				start.lifetimes(comp_type, lifetimes);
+				middle.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
+				end.lifetimes(comp_type, lifetimes);
+			}
 		}
 	}
 }
@@ -67,25 +93,8 @@ impl Lifetimes for Group {
 
 impl Lifetimes for SaveType {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
-		match self {
-			SaveType::Call(_, args) => lifetimes.extend(args.clone()),
-			SaveType::Match(t, constraints) => {
-				if constraints.iter().position(|t| t.is_type()).is_some() {
-					t.lifetimes(comp_type, lifetimes);
-					constraints.lifetimes(comp_type, lifetimes)
-				} else {
-					comp_type.lifetimes(comp_type, lifetimes)
-				}
-			}
-		}
-	}
-}
-
-impl Lifetimes for MatchArg {
-	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
-		match self {
-			MatchArg::Type(t) => t.lifetimes(comp_type, lifetimes),
-			_ => {}
+		if let SaveType::Call(ref path) = self {
+			path.segments.iter().for_each(|s| s.lifetimes(comp_type, lifetimes))
 		}
 	}
 }
@@ -121,7 +130,12 @@ impl Lifetimes for GenericArgument {
 		match self {
 			GenericArgument::Lifetime(l) => { lifetimes.insert(l.clone()); },
 			GenericArgument::Type(t) => t.lifetimes(comp_type, lifetimes),
-			GenericArgument::Binding(b) => b.ty.lifetimes(comp_type, lifetimes),
+			GenericArgument::AssocType(a) => {
+				a.ty.lifetimes(comp_type, lifetimes);
+				if let Some(g) = &a.generics {
+					g.args.iter().lifetimes(comp_type, lifetimes)
+				}
+			},
 			GenericArgument::Constraint(c) => {
 				for bound in c.bounds.iter() {
 					match bound {
@@ -131,6 +145,7 @@ impl Lifetimes for GenericArgument {
 							}
 						}
 						TypeParamBound::Lifetime(l) => { lifetimes.insert(l.clone()); }
+						_ => {}
 					}
 				}
 			}
@@ -139,7 +154,29 @@ impl Lifetimes for GenericArgument {
 	}
 }
 
-impl Lifetimes for LifetimeDef {
+impl Lifetimes for GenericParam {
+	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
+		match self {
+			GenericParam::Lifetime(l) => { lifetimes.insert(l.lifetime.clone()); }
+			GenericParam::Type(t) => t.bounds.iter().lifetimes(comp_type, lifetimes),
+			_ => {}
+		}
+	}
+}
+
+impl Lifetimes for TypeParamBound {
+	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
+		match self {
+			TypeParamBound::Trait(t) => if let Some(l) = &t.lifetimes {
+				l.lifetimes.iter().lifetimes(comp_type, lifetimes)
+			}
+			TypeParamBound::Lifetime(l) => { lifetimes.insert(l.clone()); }
+			_ => {}
+		}
+	}
+}
+
+impl Lifetimes for LifetimeParam {
 	fn lifetimes(&self, _comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		lifetimes.insert(self.lifetime.clone());
 	}
