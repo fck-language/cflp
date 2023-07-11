@@ -55,7 +55,7 @@ impl ReturnType {
 
 impl RuleInner {
 	/// Impl generation entry point
-	pub fn build(&self, return_type: ReturnType, comp_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> (TokenStream, TokenStream) {
+	pub fn build(&self, return_type: ReturnType, comp_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> (TokenStream, TokenStream) {
 		let mut out = TokenStream::new();
 		let final_return;
 		match &self.inner {
@@ -66,28 +66,52 @@ impl RuleInner {
 					SplitRule::Single(g) => {
 						if g.contains_save() {
 							let n = names.next().unwrap();
-							out.extend(g.build_save_start_end(
-								n.clone(), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::StartEnd
-							));
+							if wrapped {
+								out.extend(g.build_save_start_end(
+									n.clone(), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::StartEnd
+								));
+							} else {
+								out.extend(g.build_save(
+									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+								));
+							}
 						} else {
-							out.extend(g.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::StartEnd
-							));
+							if wrapped {
+								out.extend(g.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::StartEnd
+								));
+							} else {
+								out.extend(g.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 					}
 					SplitRule::Other { start, middle, end } => {
 						if start.contains_save() {
 							let n = names.next().unwrap();
-							out.extend(start.build_save_start_end(
-								n.clone(), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::Start
-							));
+							if wrapped {
+								out.extend(start.build_save_start_end(
+									n.clone(), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::Start
+								));
+							} else {
+								out.extend(start.build_save(
+									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+								));
+							}
 						} else {
-							out.extend(start.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::Start
-							));
+							if wrapped {
+								out.extend(start.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::Start
+								));
+							} else {
+								out.extend(start.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 						for i in middle.iter() {
@@ -101,52 +125,95 @@ impl RuleInner {
 									return_type, comp_type, map_fn
 								));
 							}
-						out.extend(quote!{ ; });
+							out.extend(quote!{ ; });
 						}
 						if end.contains_save() {
 							let n = names.next().unwrap();
-							out.extend(end.build_save_start_end(
-								n.clone(), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::End
-							));
+							if wrapped {
+								out.extend(end.build_save_start_end(
+									n.clone(), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::End
+								));
+							} else {
+								out.extend(end.build_save(
+									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+								));
+							}
 						} else {
-							out.extend(end.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::End
-							));
+							if wrapped {
+								out.extend(end.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::End
+								));
+							} else {
+								out.extend(end.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 					}
 				}
 			}
 			RuleInnerMatch::Unnamed(inner) => {
-				let args = (0..inner.count_matches()).map(|t| format_ident!("v_{}", t));
-				final_return = quote!{ (#(#args),*) };
+				let count = inner.count_matches();
+				final_return = if count == 0 {
+					quote!{}
+				} else {
+					let args = (0..count).map(|t| format_ident!("v_{}", t));
+					quote!{ (#(#args),*) }
+				};
 				match inner {
 					SplitRule::Single(g) => {
 						if g.contains_save() {
-							out.extend(g.build_save_start_end(
-								format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::StartEnd
-							));
+							if wrapped {
+								out.extend(g.build_save_start_end(
+									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::StartEnd
+								));
+							} else {
+								out.extend(g.build_save(
+									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									wrapped
+								));
+							}
 						} else {
-							out.extend(g.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::StartEnd
-							));
+							if wrapped {
+								out.extend(g.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::StartEnd
+								));
+							} else {
+								out.extend(g.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 					}
 					SplitRule::Other { start, middle, end } => {
 						let mut k = 0usize;
 						if start.contains_save() {
-							out.extend(start.build_save_start_end(
-								format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::Start
-							));
+							if wrapped {
+								out.extend(start.build_save_start_end(
+									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::Start
+								));
+							} else {
+								out.extend(start.build_save(
+									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									wrapped
+								));
+							}
 							k = 1;
 						} else {
-							out.extend(start.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::Start
-							));
+							if wrapped {
+								out.extend(start.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::Start
+								));
+							} else {
+								out.extend(start.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 						for i in middle.iter() {
@@ -160,17 +227,30 @@ impl RuleInner {
 									return_type, comp_type, map_fn
 								));
 							}
-						out.extend(quote!{ ; });
+							out.extend(quote!{ ; });
 						}
 						if end.contains_save() {
-							out.extend(end.build_save_start_end(
-								format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn,
-								wrapped, PositionType::End
-							));
+							if wrapped {
+								out.extend(end.build_save_start_end(
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn,
+									wrapped, PositionType::End
+								));
+							} else {
+								out.extend(end.build_save(
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn,
+									wrapped
+								));
+							}
 						} else {
-							out.extend(end.build_no_save_start_end(
-								return_type, comp_type, map_fn, PositionType::End
-							));
+							if wrapped {
+								out.extend(end.build_no_save_start_end(
+									return_type, comp_type, map_fn, PositionType::End
+								));
+							} else {
+								out.extend(end.build_no_save(
+									return_type, comp_type, map_fn
+								));
+							}
 						}
 						out.extend(quote!{ ; });
 					}

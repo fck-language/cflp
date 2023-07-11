@@ -6,7 +6,7 @@ use crate::prelude::{Group, ReturnType, Value, PositionType, SaveType, SplitRule
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save_start_end(&self, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position_type: PositionType) -> TokenStream {
+	pub(crate) fn build_no_save_start_end(&self, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position_type: PositionType) -> TokenStream {
 		match self {
 			Value::Single(t) => build_value_single(t, return_type, map_fn, position_type),
 			Value::Call(n) => build_value_call(n, return_type, position_type),
@@ -47,7 +47,7 @@ impl Value {
 	}
 	
 	/// Builds a `Value` to a `TokenStream` and saves it
-	pub(crate) fn build_save_start_end(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool, position: PositionType) -> TokenStream {
+	pub(crate) fn build_save_start_end(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool, position: PositionType) -> TokenStream {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function"),
@@ -141,7 +141,7 @@ impl Value {
 
 impl Group {
 	/// Builds a `Group` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save_start_end(&self, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+	pub(crate) fn build_no_save_start_end(&self, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 		match self {
 			Group::Literal(v, _) => v.build_no_save_start_end(return_type, match_type, map_fn, position),
 			Group::Kleene(v, _) => build_group_kleene_ns(v, return_type, match_type, map_fn, position),
@@ -151,7 +151,7 @@ impl Group {
 	}
 	
 	/// Builds a `Group` to a `TokenStream` and saves it
-	pub(crate) fn build_save_start_end(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool, position: PositionType) -> TokenStream {
+	pub(crate) fn build_save_start_end(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool, position: PositionType) -> TokenStream {
 		let mut out = quote!{ let #n = };
 		let inner = match self {
 			Group::Literal(v, _) => v.build_save_start_end(n, caller, return_type, match_type, map_fn, wrapped, position),
@@ -190,21 +190,33 @@ impl Group {
 ///
 /// }
 /// ```
-fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let ret_err = return_type.to_token_stream(quote!{ Err(cflp::Error{ expected: #e, found: next }) });
 	let start_end = match position {
 		PositionType::Start => quote!{ start = __next.start(); },
 		PositionType::End => quote!{ end = __next.end(); },
 		PositionType::StartEnd => quote!{ start = __next.start(); end = __next.end(); }
 	};
-	quote!{
-		let next = src.next();
-		if let Some(__next) = next {
-			if (#map_fn)(__next) != #e {
-				#ret_err
-			}
-			#start_end
-		} else { #ret_err }
+	if let Some(umap_fn) = map_fn {
+		quote! {
+			let next = src.next();
+			if let Some(__next) = next {
+				if (#umap_fn)(__next) != #e {
+					#ret_err
+				}
+				#start_end
+			} else { #ret_err }
+		}
+	} else {
+		quote! {
+			let next = src.next();
+			if let Some(__next) = next {
+				if __next != #e {
+					#ret_err
+				}
+				#start_end
+			} else { #ret_err }
+		}
 	}
 }
 
@@ -272,7 +284,7 @@ fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool, posi
 /// 	_ => Err(err_inner)
 /// };
 /// ```
-fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	fn get_args(p: &Pat) -> Vec<Ident> {
 		match p {
 			Pat::Ident(ident) => vec![ident.ident.clone()],
@@ -346,19 +358,31 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &ExprClosure
 	
 	let expect = expected(p);
 	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { expected: #expect, found: next }) });
-	quote!{
-		let next = src.next();
-		match next {
-			Some(__next) => if let #p = (#map_fn)(__next) {
-				#ok_arm
-			} else { #err }
-			_ => #err
+	if let Some(umap_fn) = map_fn {
+		quote! {
+			let next = src.next();
+			match next {
+				Some(__next) => if let #p = (#umap_fn)(__next) {
+					#ok_arm
+				} else { #err }
+				_ => #err
+			}
+		}
+	} else {
+		quote! {
+			let next = src.next();
+			match next {
+				Some(__next) => if let #p = __next {
+					#ok_arm
+				} else { #err }
+				_ => #err
+			}
 		}
 	}
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_kleene_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_group_kleene_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let first = e.build_no_save_start_end(inner_return_type, match_type, map_fn, PositionType::Start);
@@ -423,7 +447,7 @@ fn build_group_kleene_ns(e: &Value, return_type: ReturnType, match_type: &Type, 
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_positive_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_group_positive_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	match position {
@@ -486,7 +510,7 @@ fn build_group_positive_ns(e: &Value, return_type: ReturnType, match_type: &Type
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_option_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_group_option_ns(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let inner = e.build_no_save_start_end(inner_return_type, match_type, map_fn, position);
@@ -504,7 +528,7 @@ fn build_group_option_ns(e: &Value, return_type: ReturnType, match_type: &Type, 
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_kleene(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool, position: PositionType) -> TokenStream {
+fn build_group_kleene(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	match position {
@@ -587,7 +611,7 @@ fn build_group_kleene(e: &Value, n: Ident, caller: &Path, return_type: ReturnTyp
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_positive(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_group_positive(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	match position {
@@ -650,7 +674,7 @@ fn build_group_positive(e: &Value, return_type: ReturnType, match_type: &Type, m
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, position: PositionType) -> TokenStream {
+fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let inner = e.build_no_save_start_end(inner_return_type, match_type, map_fn, position);

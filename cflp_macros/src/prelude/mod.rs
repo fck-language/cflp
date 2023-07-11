@@ -37,7 +37,7 @@ pub struct Meta {
 	/// Comparison token type
 	pub cmp_type: Type,
 	/// Token to token data map
-	pub map_fn: ExprClosure,
+	pub map_fn: Option<ExprClosure>,
 	/// Is the result wrapped
 	pub wrapped: Option<Type>,
 	/// Name of the type deriving `Parser`

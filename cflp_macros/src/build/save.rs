@@ -9,7 +9,7 @@ use crate::prelude::{Value, Group, ReturnType, SaveType, SplitRule};
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> TokenStream {
+	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> TokenStream {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
@@ -22,7 +22,7 @@ impl Value {
 
 impl Group {
 	/// Builds a `Group` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> TokenStream {
+	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> TokenStream {
 		let mut out = quote!{ let #n = };
 		let inner = match self {
 			Group::Literal(v, _) => v.build_save(n, caller, return_type, match_type, map_fn, wrapped),
@@ -43,14 +43,14 @@ impl Group {
 			}
 			Group::Option(v, _) => build_group_option(v, n.clone(), caller, return_type, match_type, map_fn, wrapped)
 		};
-		out.extend(quote!( { #inner } ));
+		out.extend(quote!( { #inner }; ));
 		out
 	}
 }
 
 impl SplitRule {
 	/// Builds a `Value` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> TokenStream {
+	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> TokenStream {
 		let inner_return_type = return_type.set_wrapped(false);
 		let mut out = TokenStream::new();
 		let mut k: usize;
@@ -112,7 +112,7 @@ impl SplitRule {
 /// 	}
 /// }
 /// ```
-fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> TokenStream {
+fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let lifetime = inner_return_type.get_lifetime();
 	let match_inner = v.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map_fn, wrapped);
@@ -219,7 +219,8 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
 		}
 	};
 	
-	let err = return_type.to_token_stream(expected(p));
+	let expect = expected(p);
+	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { found: next, expected: #expect }) });
 	quote!{
 		let next = src.next();
 		match next {
@@ -236,7 +237,7 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
 /// 	Err(e) => { *src = src_old; None }
 /// };
 /// ```
-fn build_group_option(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure, wrapped: bool) -> TokenStream {
+fn build_group_option(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let inner = e.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map_fn, wrapped);

@@ -1,8 +1,9 @@
-//! An example that won't generate the types for you
+//! A more momplex example
 //!
-//! This example is an equivalent to example2 but using the `#[parser]` attribute macro and showing
-//! how to change the used enum variant names. If you want the equivalent code have a look in
-//! [`expanded`]
+//! This example demonstrates the use of [`NodeData`] and [`NodeWrapper`] to preserve positional
+//! data when parsing. It also requires the use of boxed matches.
+//!
+//! As before, the derived impls are available in [`expanded`]
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum TokType {

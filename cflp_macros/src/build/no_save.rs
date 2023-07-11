@@ -7,7 +7,7 @@ use crate::prelude::{Value, Group, ReturnType, SplitRule};
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>) -> TokenStream {
 		match self {
 			Value::Single(t) => build_value_single(t, return_type, map_fn),
 			Value::Call(n) => build_value_call(n, return_type),
@@ -29,7 +29,7 @@ impl Value {
 
 impl Group {
 	/// Builds a `Group` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>) -> TokenStream {
 		match self {
 			Group::Literal(v, _) => {
 				v.build_no_save(return_type, match_type, map_fn)
@@ -52,14 +52,23 @@ impl Group {
 /// 	return_type.to_token_stream(cflp::Error{expected: e.to_token_stream(), found: next})
 /// }
 /// ```
-fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &ExprClosure) -> TokenStream {
+fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &Option<ExprClosure>) -> TokenStream {
 	let ret_err = return_type.to_token_stream(quote!(Err(cflp::Error{ expected: #e, found: next })));
-	quote!(
-		let next = src.next();
-		if next.clone().map(#map_fn) != Some(#e) {
-			#ret_err
+	if let Some(umap_fn) = map_fn {
+		quote! {
+			let next = src.next();
+			if next.clone().map(#umap_fn) != Some(#e) {
+				#ret_err
+			}
 		}
-	)
+	} else {
+		quote! {
+			let next = src.next();
+			if next != Some(&#e) {
+				#ret_err
+			}
+		}
+	}
 }
 
 /// ```rust
@@ -71,7 +80,7 @@ fn build_value_call(e: &Ident, return_type: ReturnType) -> TokenStream {
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure) -> TokenStream {
+fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let inner = e.build_no_save(inner_return_type, match_type, map_fn);
@@ -101,7 +110,7 @@ fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map
 /// 	*src = src_old;
 /// }
 /// ```
-fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &ExprClosure) -> TokenStream {
+fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map_fn: &Option<ExprClosure>) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let inner = e.build_no_save(inner_return_type, match_type, map_fn);

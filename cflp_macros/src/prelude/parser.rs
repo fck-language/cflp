@@ -3,18 +3,24 @@
 //! [`Parse`](Parse) impls for types in [`mod.rs`](crate::prelude)
 
 use proc_macro2::{Ident, Span};
+use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
-use syn::{bracketed, parenthesized, Token};
+use syn::{bracketed, parenthesized, Token, Type};
 use syn::punctuated::Punctuated;
 use crate::prelude::{Meta, Value, Group, StructParserAttribute, SaveType, SplitRule};
 
 impl Parse for Meta {
 	fn parse(input: ParseStream) -> syn::Result<Self> {
-		let tok_type = input.parse()?;
+		let tok_type: Type = input.parse()?;
 		input.parse::<Token![,]>()?;
-		let cmp_type = input.parse()?;
-		input.parse::<Token![,]>()?;
-		let map_fn = input.parse()?;
+		let cmp_type: Type = input.parse()?;
+		
+		let map_fn = if tok_type.to_token_stream().to_string() != cmp_type.to_token_stream().to_string() {
+			input.parse::<Token![,]>()?;
+			Some(input.parse()?)
+		} else {
+			None
+		};
 		let wrapped = if input.peek(Token![,]) {
 			input.parse::<Token![,]>()?;
 			Some(input.parse()?)
