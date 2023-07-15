@@ -31,7 +31,7 @@ impl NodeData<usize> for Token {
 }
 
 mod nodes {
-    use cflp::NodeWrapper;
+    use cflp::{NodeWrapper, Parser};
     use crate::{Token, TokType};
     
     /// # Root match struct
@@ -213,14 +213,55 @@ mod expanded {
             src: &mut T,
         ) -> Result<cflp::NodeWrapper<Expr, usize>, cflp::Error<&'a Token, TokType>> {
             use cflp::NodeData;
-            let mut start = Default::default();
-            let mut end = Default::default();
+            let mut start = <usize as Default>::default();
+            let mut end = <usize as Default>::default();
             let first_err;
+            let src_old = src.clone();
+            match match src.next() {
+                Some(t_unwrapped) => {
+                    let start = <Token as NodeData<usize>>::start(t_unwrapped);
+                    let end = <Token as NodeData<usize>>::end(t_unwrapped);
+                    match (|t: &Token| t.t)(t_unwrapped) {
+                        TokType::Literal(t) => {
+                            Ok(cflp::NodeWrapper {
+                                start,
+                                end,
+                                node: Expr::Lit(t.clone()),
+                            })
+                        }
+                        TokType::Other(t) => {
+                            Ok(cflp::NodeWrapper {
+                                start,
+                                end,
+                                node: Expr::Other(t.clone()),
+                            })
+                        }
+                        t => {
+                            Err(cflp::Error {
+                                expected: TokType::Literal(Default::default()),
+                                found: Some(t),
+                            })
+                        }
+                    }
+                }
+                _ => {
+                    Err(cflp::Error {
+                        expected: TokType::Literal(Default::default()),
+                        found: None,
+                    })
+                }
+            } {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    first_err = e;
+                    *src = src_old;
+                }
+            }
             let src_old = src.clone();
             match 'l0: {
                 let next = src.next();
                 if let Some(__next) = next {
-                    if __next != TokType::OP {
+                    if (|t: &Token| t.t)(__next) != TokType::OP {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::OP,
                             found: next,
@@ -241,7 +282,7 @@ mod expanded {
                 };
                 let next = src.next();
                 if let Some(__next) = next {
-                    if __next != TokType::CP {
+                    if (|t: &Token| t.t)(__next) != TokType::CP {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::CP,
                             found: next,
@@ -255,69 +296,6 @@ mod expanded {
                     })
                 };
                 break 'l0 Ok(Expr::Paren { inner });
-            } {
-                Ok(t) => return Ok(NodeWrapper { node: t, start, end }),
-                Err(e) => {
-                    first_err = e;
-                    *src = src_old;
-                }
-            }
-            let src_old = src.clone();
-            match 'l0: {
-                let v_0 = {
-                    let next = src.next();
-                    match next {
-                        Some(__next) => {
-                            if let TokType::Literal(t) = __next {
-                                start = __next.start();
-                                end = __next.end();
-                                t
-                            } else {
-                                break 'l0 Err(cflp::Error {
-                                    expected: TokType::Literal(Default::default()),
-                                    found: next,
-                                })
-                            }
-                        }
-                        _ => {
-                            break 'l0 Err(cflp::Error {
-                                expected: TokType::Literal(Default::default()),
-                                found: next,
-                            });
-                        }
-                    }
-                };
-                break 'l0 Ok(Expr::Lit(v_0));
-            } {
-                Ok(t) => return Ok(NodeWrapper { node: t, start, end }),
-                Err(_) => *src = src_old,
-            }
-            let src_old = src.clone();
-            match 'l0: {
-                let v_0 = {
-                    let next = src.next();
-                    match next {
-                        Some(__next) => {
-                            if let TokType::Other(t) = __next {
-                                start = __next.start();
-                                end = __next.end();
-                                t
-                            } else {
-                                break 'l0 Err(cflp::Error {
-                                    expected: TokType::Other(Default::default()),
-                                    found: next,
-                                })
-                            }
-                        }
-                        _ => {
-                            break 'l0 Err(cflp::Error {
-                                expected: TokType::Other(Default::default()),
-                                found: next,
-                            });
-                        }
-                    }
-                };
-                break 'l0 Ok(Expr::Other(v_0));
             } {
                 Ok(t) => return Ok(NodeWrapper { node: t, start, end }),
                 Err(_) => *src = src_old,

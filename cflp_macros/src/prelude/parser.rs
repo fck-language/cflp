@@ -34,7 +34,7 @@ impl Parse for StructParserAttribute {
 		let meta = input.parse()?;
 		input.parse::<Token![;]>()?;
 		let rule = Punctuated::<Group, Token![,]>::parse_separated_nonempty(input)?;
-		let mut rule_vec: Vec<_> = rule.iter().map(|t| t.clone()).collect();
+		let mut rule_vec: Vec<_> = rule.iter().map(Clone::clone).collect();
 		let rule = if rule.len() == 1 {
 			SplitRule::Single(Box::new(rule_vec.pop().unwrap()))
 		} else {
@@ -54,7 +54,7 @@ impl Parse for Value {
 			let inner = content.parse_terminated(Group::parse, Token![,])?;
 			if input.is_empty() { return Err(syn::Error::new(input.span(), "Group must contain at least one element")) }
 			let has_ret = inner.iter().map(|t| t.contains_save()).position(|t| t).is_some();
-			let mut inner: Vec<_> = inner.iter().map(|t| t.clone()).collect();
+			let mut inner: Vec<_> = inner.iter().map(Clone::clone).collect();
 			let inner = if inner.len() == 1 {
 				SplitRule::Single(Box::new(inner.pop().unwrap()))
 			} else {

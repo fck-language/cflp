@@ -18,12 +18,13 @@ use proc_macro::TokenStream as pmTS;
 use proc_macro2::{Span, TokenStream};
 use std::collections::HashSet;
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields};
+use syn::{parse, Ident, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, Pat};
 use crate::{
 	lifetimes::Lifetimes,
 	prelude::{Meta, StructParserAttribute, MacroInner, RuleInner, Rules, ReturnType}
 };
-use crate::prelude::{Group, RuleInnerMatch, SplitRule};
+use crate::build::{build_match_arm, build_match_arm_err};
+use crate::prelude::{Group, RuleInnerMatch, SaveType, SplitRule, Value};
 
 /// Derive macro for `cflp::Parser`
 #[proc_macro_derive(Parser, attributes(parser))]
@@ -82,13 +83,13 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 					segments: Punctuated::<_, Token![::]>::from_iter([PathSegment::from(item.ident.clone()), PathSegment::from(variant.ident.clone())]),
 				};
 				let inner = attr.parse_args_with(Punctuated::<Group, Token![,]>::parse_terminated)?;
-				let mut inner = inner.iter().collect::<Vec<_>>();
+				let mut inner = inner.iter().map(Clone::clone).collect::<Vec<_>>();
 				let inner = if inner.len() == 1 {
-					SplitRule::Single(Box::new(inner[0].clone()))
+					SplitRule::Single(Box::new(inner.remove(0)))
 				} else {
 					let last = inner.pop().unwrap().clone();
 					let first = inner.remove(0).clone();
-					SplitRule::Other { start: Box::new(first), end: Box::new(last), middle: inner.iter().map(|t| t.clone().clone()).collect() }
+					SplitRule::Other { start: Box::new(first), end: Box::new(last), middle: inner.iter().map(Clone::clone).collect() }
 				};
 				let inner = match &variant.fields {
 					Fields::Named(fields) => RuleInnerMatch::Named(
@@ -149,54 +150,170 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 				}
 			}
 		}
-		Rules::Multiple { first, rem } => {
-			let inner_return_rule = ReturnType::Lifetime(0, false);
-			let (mut rule_inner, return_args) = first.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
-			
-			let lifetime = inner_return_rule.get_lifetime();
-			let name = &first.name;
-			rule_inner.extend(quote!{; break #lifetime Ok(#name #return_args)});
-			
-			let (pre, ok) = if meta.wrapped.is_some() {
-				(
-					quote!{
-						use cflp::NodeData;
-						let mut start = Default::default();
-						let mut end = Default::default();
-					}, quote!{
-						NodeWrapper { node: t, start, end }
+		Rules::Multiple { first, mut rem } => {
+			// split into simple (single ident) and others
+			fn is_single_match(t: &RuleInner) -> Option<(&Path, Option<&Vec<Ident>>, Pat)> {
+				let names;
+				if let SplitRule::Single(g) = match &t.inner {
+					RuleInnerMatch::Named(n, s) => {
+						names = Some(n);
+						s
+					},
+					RuleInnerMatch::Unnamed(s) => {
+						names = None;
+						s
 					}
-				)
-			} else { (quote!{}, quote!{ t }) };
-			let mut local_out = quote!{
-				#pre
-				let first_err;
-				let src_old = src.clone();
-				match #lifetime: { #rule_inner } {
-					Ok(t) => return Ok(#ok),
-					Err(e) => {
-						first_err = e;
-						*src = src_old;
+				} {
+					if let Group::Literal(ref v, _) = **g {
+						match v {
+							Value::Single(e) => {
+								Some((&t.name, names, Pat::Verbatim(e.to_token_stream())))
+							}
+							Value::Save { group: SaveType::Other(pat), .. } => {
+								Some((&t.name, names, pat.clone()))
+							}
+							_ => None
+						}
+					} else { None }
+				} else { None }
+			}
+			let first_clone = first.clone();
+			let mut single_match_rules = if let Some(t) = is_single_match(&first_clone) {
+				vec![(0, t)]
+			} else { vec![] };
+			for (n, i) in rem.iter().enumerate() {
+				if let Some(t) = is_single_match(&i) { single_match_rules.push((n + 1, t)) }
+			}
+			if single_match_rules.len() == rem.len() + 1 {
+				// all rules are simple match rules
+				let (_, (_, _, first_arm)) = single_match_rules.first().unwrap();
+				let (err, err_wrapped) = build_match_arm_err(first_arm);
+				let mut arms = Vec::new();
+				let is_wrapped = meta.wrapped.is_some();
+				for (_, (var, args, pattern)) in single_match_rules {
+					arms.push(build_match_arm(var, args, &pattern, is_wrapped));
+				}
+				let pre = if let Some(pos_type) = &meta.wrapped {
+					let tok_type = &meta.tok_type;
+					quote!{ let start = <#tok_type as NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as NodeData<#pos_type>>::end(t_unwrapped); }
+				} else { quote!{} };
+				let inner_match_expr = if let Some(map_fn) = &meta.map_fn {
+					quote!{ (#map_fn)(t_unwrapped) }
+				} else { quote!{ t_unwrapped } };
+				quote!{
+					match src.next() {
+						Some(t_unwrapped) => {
+							#pre
+							match #inner_match_expr {
+								#(#arms,)*
+								#err_wrapped
+							}
+						}
+						#err
 					}
 				}
-			};
-			for rule in rem.iter() {
-				let (mut rule_inner, return_args) = rule.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
-				let name = &rule.name;
-				rule_inner.extend(quote!{
-					; break #lifetime Ok(#name #return_args)
-				});
+			} else {
+				let inner_return_rule = ReturnType::Lifetime(0, false);
 				let lifetime = inner_return_rule.get_lifetime();
-				local_out.extend(quote!{
-					let src_old = src.clone();
-					match #lifetime: { #rule_inner } {
-						Ok(t) => return Ok(#ok),
-						Err(_) => *src = src_old
+				let (pre, ok) = if let Some(pos_type) = &meta.wrapped {
+					(
+						quote!{
+							use cflp::NodeData;
+							let mut start = <#pos_type as Default>::default();
+							let mut end = <#pos_type as Default>::default();
+						}, quote!{
+							NodeWrapper { node: t, start, end }
+						}
+					)
+				} else { (quote!{}, quote!{ t }) };
+				let first_match = if single_match_rules.len() > 1 {
+					let (_, (_,_, first_arm)) = single_match_rules.first().unwrap();
+					let (err, err_wrapped) = build_match_arm_err(first_arm);
+					let mut arms = Vec::new();
+					for (_, (var, args, pattern)) in single_match_rules.iter() {
+						arms.push(build_match_arm(var, *args, pattern, meta.wrapped.is_some()));
 					}
-				});
+					let pre_match = if let Some(pos_type) = &meta.wrapped {
+						let tok_type = &meta.tok_type;
+						quote!{ let start = <#tok_type as NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as NodeData<#pos_type>>::end(t_unwrapped); }
+					} else { quote!{} };
+					let inner_match_expr = if let Some(map_fn) = &meta.map_fn {
+						quote!{ (#map_fn)(t_unwrapped) }
+					} else { quote!{ t_unwrapped } };
+					let ret = quote!{
+						match match src.next() {
+							Some(t_unwrapped) => {
+								#pre_match
+								match #inner_match_expr {
+									#(#arms,)*
+									#err_wrapped
+								}
+							}
+							#err
+						} {
+							Ok(t) => return Ok(t),
+							Err(e) => {
+								first_err = e;
+								*src = src_old;
+							}
+						}
+					};
+					let (first_simple_position, _) = single_match_rules.remove(0);
+					let mut new_rem = if first_simple_position != 0 {
+						vec![first]
+					} else { Vec::new() };
+					let mut j = first_simple_position;
+					for (i, _) in single_match_rules {
+						if i > j + 1 {
+							new_rem.extend_from_slice(&rem[j..i])
+						}
+						j = i;
+					}
+					if rem.len() > j {
+						new_rem.extend_from_slice(&rem[j..])
+					}
+					rem = new_rem;
+					ret
+				} else {
+					let (mut rule_inner, return_args) = first.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+					let name = &first.name;
+					rule_inner.extend(quote!{; break #lifetime Ok(#name #return_args)});
+					
+					quote!{
+						match #lifetime: { #rule_inner } {
+							Ok(t) => return Ok(#ok),
+							Err(e) => {
+								first_err = e;
+								*src = src_old;
+							}
+						}
+					}
+				};
+				
+				let mut local_out = quote!{
+					#pre
+					let first_err;
+					let src_old = src.clone();
+					#first_match
+				};
+				for rule in rem.iter() {
+					let (mut rule_inner, return_args) = rule.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+					let name = &rule.name;
+					rule_inner.extend(quote!{
+						; break #lifetime Ok(#name #return_args)
+					});
+					let lifetime = inner_return_rule.get_lifetime();
+					local_out.extend(quote!{
+						let src_old = src.clone();
+						match #lifetime: { #rule_inner } {
+							Ok(t) => return Ok(#ok),
+							Err(_) => *src = src_old
+						}
+					});
+				}
+				local_out.extend(quote!{ return Err(first_err) });
+				local_out
 			}
-			local_out.extend(quote!{return Err(first_err)});
-			local_out
 		}
 	};
 	let tok_type = meta.tok_type;
@@ -205,7 +322,6 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 		#[automatically_derived]
 		impl <'a, #impl_lifetimes> cflp::Parser<&'a #tok_type, #cmp_type, #ret_type> for #_self {
 			fn parse<T: Iterator<Item=&'a #tok_type> + Clone>(src: &mut T) -> Result<#ret_type, cflp::Error<&'a #tok_type, #cmp_type>> {
-				
 				#inner_match_stream
 			}
 		}

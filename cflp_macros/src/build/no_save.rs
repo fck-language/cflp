@@ -53,7 +53,7 @@ impl Group {
 /// }
 /// ```
 fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &Option<ExprClosure>) -> TokenStream {
-	let ret_err = return_type.to_token_stream(quote!(Err(cflp::Error{ expected: #e, found: next })));
+	let ret_err = return_type.to_token_stream(quote!{ Err(cflp::Error{ expected: #e, found: next }) });
 	if let Some(umap_fn) = map_fn {
 		quote! {
 			let next = src.next();

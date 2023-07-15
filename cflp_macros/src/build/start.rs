@@ -171,7 +171,7 @@ impl Group {
 				quote!{ let mut #n_ident_out = Vec::new(); #inner }
 			}
 		};
-		out.extend(quote!( { #inner } ));
+		out.extend(quote!{ { #inner } });
 		out
 	}
 }

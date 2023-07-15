@@ -43,7 +43,7 @@ impl Group {
 			}
 			Group::Option(v, _) => build_group_option(v, n.clone(), caller, return_type, match_type, map_fn, wrapped)
 		};
-		out.extend(quote!( { #inner }; ));
+		out.extend(quote!{ { #inner }; });
 		out
 	}
 }
@@ -94,6 +94,33 @@ impl SplitRule {
 			(false, 1) => quote!{ #out; #(#vars),* },
 			(true, _) => quote!{ #out; Ok((#(#vars),*)) },
 			(false, _) => quote!{ #out; (#(#vars),*) },
+		}
+	}
+}
+
+pub fn build_match_arm_err(pattern: &Pat) -> (TokenStream, TokenStream) {
+	let expected = value_save_other_expected(pattern);
+	(
+		quote!{ _ => Err(cflp::Error { expected: #expected, found: None }) },
+		quote!{ t => Err(cflp::Error { expected: #expected, found: Some(t) }) }
+	)
+}
+
+pub fn build_match_arm(var: &Path, wrapped_args: Option<&Vec<Ident>>, pattern: &Pat, wrapped: bool) -> TokenStream {
+	let returned_args = value_save_other_get_args(pattern);
+	if let Some(args) = wrapped_args {
+		let field_args = args.iter().zip(returned_args.iter()).map(|(f, v)| quote!{ #f: #v.clone() });
+		if wrapped {
+			quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var{ #(#field_args),* } }) }
+		} else {
+			quote!{ #pattern => Ok(#var{ #(#field_args),* }) }
+		}
+	} else {
+		match (returned_args.len(), wrapped) {
+			(0, true) => quote!{ next_match @ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var }) },
+			(0, false) => quote!{ next_match @ #pattern => Ok(#var) },
+			(_, true) => quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var(#(#returned_args.clone()),*) }) },
+			(_, false) => quote!{ #pattern => Ok(#var(#(#returned_args.clone()),*)) },
 		}
 	}
 }
@@ -153,56 +180,7 @@ fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool) -> T
 /// };
 /// ```
 fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
-	fn get_args(p: &Pat) -> Vec<Ident> {
-		match p {
-			Pat::Ident(ident) => vec![ident.ident.clone()],
-			Pat::Paren(inner) => get_args(&inner.pat),
-			Pat::Reference(ident) => get_args(&ident.pat),
-			Pat::Slice(slice) => slice.elems.iter().flat_map(|t| get_args(t)).collect(),
-			Pat::Struct(struc) => struc.fields.iter().flat_map(|t| get_args(&t.pat)).collect(),
-			Pat::Tuple(inner) => inner.elems.iter().flat_map(|t| get_args(t)).collect(),
-			Pat::TupleStruct(tstruc) => tstruc.elems.iter().flat_map(|t| get_args(t)).collect(),
-			Pat::Type(ty) => get_args(&ty.pat),
-			_ => Vec::new()
-		}
-	}
-	fn expected(p: &Pat) -> TokenStream {
-		match p {
-			Pat::Lit(lit) => quote!{ #lit },
-			Pat::Macro(m) => quote!{ #m },
-			Pat::Or(or) => expected(or.cases.first().unwrap()),
-			Pat::Paren(inner) => expected(&inner.pat),
-			Pat::Path(path) => quote!{ #path },
-			Pat::Range(range) => if let Some(ref start) = range.start {
-				quote!{ #start }
-			} else if let Some(ref end) = range.end {
-				quote!{ #end }
-			} else {
-				quote!{ Default::default() }
-			},
-			Pat::Slice(inner) => {
-				let inner = inner.elems.iter().map(|t| expected(t));
-				quote!{ [#(#inner),*] }
-			}
-			Pat::Struct(inner) => {
-				let fields = Punctuated::<_, Token![,]>::from_iter(inner.fields.iter().map(|t| {
-					let val = expected(&t.pat);
-					let name = &t.member;
-					quote!{ #name: #val }
-				}));
-				let name = &inner.path;
-				quote!{ #name { #fields } }
-			}
-			Pat::Tuple(paren) => Punctuated::<_, Token![,]>::from_iter(paren.elems.iter().map(expected)).to_token_stream(),
-			Pat::TupleStruct(tstruct) => {
-				let fields = Punctuated::<_, Token![,]>::from_iter(tstruct.elems.iter().map(expected));
-				let name = &tstruct.path;
-				quote!{ #name ( #fields ) }
-			}
-			_ => quote!{ Default::default() }
-		}
-	}
-	let returned_args = get_args(p);
+	let returned_args = value_save_other_get_args(p);
 	
 	let ok_arm = if returned_args.is_empty() {
 		if return_type.is_wrapped() {
@@ -219,7 +197,7 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
 		}
 	};
 	
-	let expect = expected(p);
+	let expect = value_save_other_expected(p);
 	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { found: next, expected: #expect }) });
 	quote!{
 		let next = src.next();
@@ -227,6 +205,58 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
 			#ok_arm,
 			_ => #err
 		}
+	}
+}
+
+/// Extract values available from matching a [pattern](syn::Pat) in a `match` expression
+fn value_save_other_get_args(p: &Pat) -> Vec<Ident> {
+	match p {
+		Pat::Ident(ident) => vec![ident.ident.clone()],
+		Pat::Paren(inner) => value_save_other_get_args(&inner.pat),
+		Pat::Reference(ident) => value_save_other_get_args(&ident.pat),
+		Pat::Slice(slice) => slice.elems.iter().flat_map(value_save_other_get_args).collect(),
+		Pat::Struct(struc) => struc.fields.iter().flat_map(|t| value_save_other_get_args(&t.pat)).collect(),
+		Pat::Tuple(inner) => inner.elems.iter().flat_map(value_save_other_get_args).collect(),
+		Pat::TupleStruct(tstruc) => tstruc.elems.iter().flat_map(value_save_other_get_args).collect(),
+		Pat::Type(ty) => value_save_other_get_args(&ty.pat),
+		_ => Vec::new()
+	}
+}
+
+fn value_save_other_expected(p: &Pat) -> TokenStream {
+	match p {
+		Pat::Lit(lit) => quote!{ #lit },
+		Pat::Macro(m) => quote!{ #m },
+		Pat::Or(or) => value_save_other_expected(or.cases.first().unwrap()),
+		Pat::Paren(inner) => value_save_other_expected(&inner.pat),
+		Pat::Path(path) => quote!{ #path },
+		Pat::Range(range) => if let Some(ref start) = range.start {
+			quote!{ #start }
+		} else if let Some(ref end) = range.end {
+			quote!{ #end }
+		} else {
+			quote!{ Default::default() }
+		},
+		Pat::Slice(inner) => {
+			let inner = inner.elems.iter().map(value_save_other_expected);
+			quote!{ [#(#inner),*] }
+		}
+		Pat::Struct(inner) => {
+			let fields = Punctuated::<_, Token![,]>::from_iter(inner.fields.iter().map(|t| {
+				let val = value_save_other_expected(&t.pat);
+				let name = &t.member;
+				quote!{ #name: #val }
+			}));
+			let name = &inner.path;
+			quote!{ #name { #fields } }
+		}
+		Pat::Tuple(paren) => Punctuated::<_, Token![,]>::from_iter(paren.elems.iter().map(value_save_other_expected)).to_token_stream(),
+		Pat::TupleStruct(tstruct) => {
+			let fields = Punctuated::<_, Token![,]>::from_iter(tstruct.elems.iter().map(value_save_other_expected));
+			let name = &tstruct.path;
+			quote!{ #name ( #fields ) }
+		}
+		_ => quote!{ Default::default() }
 	}
 }
 

@@ -8,7 +8,14 @@
 pub enum Token {
     Digit(usize),
     Ident(String),
-    Comma, SemiColon, Dot
+    Comma, SemiColon, Dot,
+    Default
+}
+
+impl Default for Token {
+    fn default() -> Self {
+        Self::Default
+    }
 }
 
 impl PartialEq<Token> for &Token {
@@ -24,7 +31,7 @@ mod nodes {
     
     #[derive(Debug, Clone)]
     #[derive(Parser)]
-    #[parser(Token, Token; ([@Value])+, [@Sep], ([@Value])+)]
+    #[parser(Token, Token; ([@Value])+, [@Sep], ([@Value])*, (@Sep)?)]
     pub struct Base {
         first: Vec<Value>,
         sep: Sep,
@@ -49,13 +56,13 @@ mod nodes {
         Comma,
         #[parser(Token::SemiColon)]
         SemiColon,
-        #[parser(Token::Dot)]
+        #[parser(Token::Dot, Token::Dot)]
         Dot
     }
 }
 
 mod expanded {
-    #![allow(dead_code)]
+    #![allow(dead_code, unused)]
     use cflp::Parser;
     use crate::Token;
     
@@ -106,16 +113,7 @@ mod expanded {
                 }
             };
             let last = {
-                let last_0 = {
-                    let last_0_0 = {
-                        match Value::parse(src) {
-                            Ok(t) => t,
-                            Err(e) => return Err(e),
-                        }
-                    };
-                    last_0_0
-                };
-                let mut last_out = vec![last_0];
+                let mut last_out = Vec::new();
                 loop {
                     let src_old = src.clone();
                     match 'l0: {
@@ -136,6 +134,17 @@ mod expanded {
                 }
                 last_out
             };
+            let src_old = src.clone();
+            if 'l0: {
+                if let Err(e) = Sep::parse(src) {
+                    break 'l0 Err(e);
+                }
+                Ok(())
+            }
+            .is_err()
+            {
+                *src = src_old;
+            }
             return Ok(Self { first, sep, last });
         }
     }
@@ -148,43 +157,14 @@ mod expanded {
     
     impl<'a> cflp::Parser<&'a Token, Token, Self> for Value {
         fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
-            let first_err;
-            let src_old = src.clone();
-            match 'l0: {
-                let v_0 = {
-                    let next = src.next();
-                    match next {
-                        Some(Token::Digit(t)) => t.clone(),
-                        _ => {
-                            break 'l0 Err(cflp::Error { found: next, expected: Token::Digit(Default::default()) });
-                        }
-                    }
-                };
-                break 'l0 Ok(Value::Int(v_0));
-            } {
-                Ok(t) => return Ok(t),
-                Err(e) => {
-                    first_err = e;
-                    *src = src_old;
-                }
+            match src.next() {
+                Some(t_unwrapped) => match t_unwrapped {
+                    Token::Digit(t) => Ok(Value::Int(t.clone())),
+                    Token::Ident(t) => Ok(Value::Ident(t.clone())),
+                    t => Err(cflp::Error { expected: Token::Digit(Default::default()), found: Some(t) }),
+                },
+                _ => Err(cflp::Error { expected: Token::Digit(Default::default()), found: None }),
             }
-            let src_old = src.clone();
-            match 'l0: {
-                let v_0 = {
-                    let next = src.next();
-                    match next {
-                        Some(Token::Ident(t)) => t.clone(),
-                        _ => {
-                            break 'l0 Err(cflp::Error { found: next, expected: Token::Ident(Default::default()) });
-                        }
-                    }
-                };
-                break 'l0 Ok(Value::Ident(v_0));
-            } {
-                Ok(t) => return Ok(t),
-                Err(_) => *src = src_old,
-            }
-            return Err(first_err);
         }
     }
     
@@ -199,12 +179,13 @@ mod expanded {
         fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
             let first_err;
             let src_old = src.clone();
-            match 'l0: {
-                let next = src.next();
-                if next != Some(&Token::Comma) {
-                    break 'l0 Err(cflp::Error { expected: Token::Comma, found: next });
-                }
-                break 'l0 Ok(Sep::Comma);
+            match match src.next() {
+                Some(t_unwrapped) => match t_unwrapped {
+                    next_match @ Token::Comma => Ok(Sep::Comma),
+                    next_match @ Token::SemiColon => Ok(Sep::SemiColon),
+                    t => Err(cflp::Error { expected: Default::default(), found: Some(t) }),
+                },
+                _ => Err(cflp::Error { expected: Default::default(), found: None }),
             } {
                 Ok(t) => return Ok(t),
                 Err(e) => {
@@ -215,16 +196,9 @@ mod expanded {
             let src_old = src.clone();
             match 'l0: {
                 let next = src.next();
-                if next != Some(&Token::SemiColon) {
-                    break 'l0 Err(cflp::Error { expected: Token::SemiColon, found: next });
+                if next != Some(&Token::Dot) {
+                    break 'l0 Err(cflp::Error { expected: Token::Dot, found: next });
                 }
-                break 'l0 Ok(Sep::SemiColon);
-            } {
-                Ok(t) => return Ok(t),
-                Err(_) => *src = src_old,
-            }
-            let src_old = src.clone();
-            match 'l0: {
                 let next = src.next();
                 if next != Some(&Token::Dot) {
                     break 'l0 Err(cflp::Error { expected: Token::Dot, found: next });
@@ -247,7 +221,7 @@ fn main() {
     let sample_input = vec![
         Digit(0), Ident("hello".to_string()),
         SemiColon,
-        Ident("world".to_string()), Ident("!".to_string()), Digit(48879)
+        Ident("world".to_string()), Ident("!".to_string()), Digit(48879),
     ];
     let mut input_iterator = sample_input.iter().peekable();
     match Base::parse(&mut input_iterator) {
