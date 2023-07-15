@@ -1,36 +1,38 @@
 //! A simple example
 //!
 //! This example gives some really simple parsing examples with simple token inputs.
-//!
-//! The derived [`Parser`](cflp::Parser) impls are available in [`expanded`]
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Token {
-    Digit(usize),
-    Ident(String),
-    Comma, SemiColon, Dot,
-    Default
-}
-
-impl Default for Token {
-    fn default() -> Self {
-        Self::Default
+mod prelude {
+    //! General things we need as inputs
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum Token {
+        Digit(usize),
+        Ident(String),
+        Comma, SemiColon, Dot,
+        Default
     }
-}
-
-impl PartialEq<Token> for &Token {
-    fn eq(&self, other: &Token) -> bool {
-        self == other
+    
+    impl Default for Token {
+        fn default() -> Self {
+            Self::Default
+        }
+    }
+    
+    impl PartialEq<Token> for &Token {
+        fn eq(&self, other: &Token) -> bool {
+            self == other
+        }
     }
 }
 
 mod nodes {
-    #![allow(dead_code)]
+    //! This module contains the structs and enums we'll be deriving the [`Parser`] trait for.
+    //!
+    //! The expended impls are in the [`expanded`](crate::expanded) module
     use cflp::Parser;
     use crate::Token;
     
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, Token; ([@Value])+, [@Sep], ([@Value])*, (@Sep)?)]
     pub struct Base {
         first: Vec<Value>,
@@ -38,8 +40,7 @@ mod nodes {
         last: Vec<Value>
     }
     
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, Token)]
     pub enum Value {
         #[parser([Token::Digit(t)])]
@@ -48,8 +49,7 @@ mod nodes {
         Ident(String)
     }
     
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, Token)]
     pub enum Sep {
         #[parser(Token::Comma)]
@@ -214,6 +214,7 @@ mod expanded {
 }
 
 use nodes::*;
+use prelude::*;
 use cflp::Parser;
 
 fn main() {

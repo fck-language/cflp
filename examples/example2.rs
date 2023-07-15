@@ -2,51 +2,55 @@
 //!
 //! This example demonstrates the use of [`NodeData`] and [`NodeWrapper`] to preserve positional
 //! data when parsing. It also requires the use of boxed matches.
-//!
-//! As before, the derived impls are available in [`expanded`]
 
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum TokType {
-    OP,
-    CP,
-    Plus,
-    Literal(u8),
-    Other(char),
-}
-
-#[derive(Debug)]
-pub struct Token {
-    pub ps: usize,
-    pub pe: usize,
-    pub t: TokType,
-}
-
-impl PartialEq<TokType> for &Token {
-    fn eq(&self, other: &TokType) -> bool { &self.t == other }
-}
-
-impl NodeData<usize> for Token {
-    fn start(&self) -> usize { self.ps }
-    fn end(&self) -> usize { self.pe }
+mod prelude {
+    //! General things we need as inputs
+    use cflp::NodeData;
+    
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    pub enum TokType {
+        OP,
+        CP,
+        Plus,
+        Literal(u8),
+        Other(char),
+    }
+    
+    #[derive(Debug)]
+    pub struct Token {
+        pub ps: usize,
+        pub pe: usize,
+        pub t: TokType,
+    }
+    
+    impl PartialEq<TokType> for &Token {
+        fn eq(&self, other: &TokType) -> bool { &self.t == other }
+    }
+    
+    impl NodeData<usize> for Token {
+        fn start(&self) -> usize { self.ps }
+        fn end(&self) -> usize { self.pe }
+    }
 }
 
 mod nodes {
+    //! This module contains the structs and enums we'll be deriving the [`Parser`] trait for.
+    //!
+    //! The expended impls are in the [`expanded`](crate::expanded) module
     use cflp::{NodeWrapper, Parser};
     use crate::{Token, TokType};
     
     /// # Root match struct
     ///
     /// Matches as many [`Add`] repetitions as possible
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, TokType, |t| t.t, usize; ([@Add])*)]
     pub struct Root(pub Vec<NodeWrapper<Add, usize>>);
     
     /// # Add struct
     ///
     /// Matches one [expression](Expr) plus another [expression](Expr)
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, TokType, |t| t.t, usize; [[@Expr]], TokType::Plus, [[@Expr]])]
     pub struct Add {
         pub left: NodeWrapper<Box<Expr>, usize>,
@@ -57,8 +61,7 @@ mod nodes {
     ///
     /// This matches either an [add expression](Add) in parentheses, a digits (`u8`), or a
     /// character (`char`)
-    #[derive(Debug, Clone)]
-    #[derive(Parser)]
+    #[derive(Debug, Clone, Parser)]
     #[parser(Token, TokType, |t: &Token| t.t, usize)]
     pub enum Expr {
         #[parser(TokType::OP, [@Add], TokType::CP)]
@@ -306,7 +309,8 @@ mod expanded {
 }
 
 use nodes::*;
-use cflp::{NodeData, Parser};
+use prelude::*;
+use cflp::Parser;
 
 fn main() {
     let sample_input = vec![

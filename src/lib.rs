@@ -14,7 +14,7 @@ use std::fmt::{Debug, Formatter};
 /// Derive macro used for the [`Parser`] trait. See the book for how to use this macro
 pub use cflp_macros::Parser;
 
-/// Parser error struct
+/// # Parser error struct
 ///
 /// This is the error type returned by the [`Parser`] trait when an error is found. The types are
 /// different to allow the iterator values to contain additional data that does need to be compared
@@ -43,8 +43,8 @@ impl<F: Debug, E: Debug> Debug for Error<F, E> {
 /// * `C` - Type to compare to. Token class
 /// * `R` - Ok returned type. This will either be `Self` or [`NodeWrapper<Self, D>`]
 pub trait Parser<I: PartialEq<C>, C: PartialEq<C>, R = Self> {
-	/// Parse an AST from a given input. Returns `Ok(Self)` if the AST is found and
-	/// `Err(cflp::Error<I, C>)` if the AST was not found
+	/// Parse an AST from a given input. Returns `Ok(Self)` (optionally wrapped) if the AST is
+	/// found and `Err(cflp::Error<I, C>)` if the AST was not found
 	fn parse<T: Iterator<Item=I> + Clone>(src: &mut T) -> Result<R, Error<I, C>> where Self: Sized;
 }
 

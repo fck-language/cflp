@@ -1,4 +1,7 @@
-//! Token streams for values and groups
+//! # Non-saving code gen
+//!
+//! This module contains code for building impl sections for elements that are not saved. There are
+//! never any calls to functions in the [saving](crate::build::save) equivalent module
 
 use proc_macro2::TokenStream;
 use quote::quote;

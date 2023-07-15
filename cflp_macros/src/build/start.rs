@@ -1,3 +1,9 @@
+//! # Start and end matches
+//!
+//! This module contains code for building the first and last parts of the impl when the result is
+//! wrapped. This makes calls to both the [saving](crate::build::save) and
+//! [non-saving](crate::build::no_save) build functions
+
 use proc_macro2::TokenStream;
 use syn::{Expr, Type, Ident, Path, Token, Pat, ExprClosure};
 use quote::{format_ident, quote, ToTokens};
@@ -179,15 +185,14 @@ impl Group {
 /// ```rust
 /// let next = src.next();
 /// if let Some(next_unwrapped) = next {
-/// 	if map_fn(&next_unwrapped) != e {
+/// 	if (map_fn)(next_unwrapped) != e {
 /// 		return_type.to_token_stream(cflp::Error{expected: e.to_token_stream(), found: next})
 /// 	}
 /// 	// At least one of the following two are included
 /// 	start = next_unwrapped.start();
 /// 	end = next_unwrapped.end()
-/// }
-/// if next.clone().map(map_fn) != Some(e.to_token_stream()) {
-///
+/// } else {
+/// 	return_type.to_token_stream(cflp::Error{expected: e.to_token_stream(), found: next})
 /// }
 /// ```
 fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
@@ -285,6 +290,7 @@ fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool, posi
 /// };
 /// ```
 fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &Option<ExprClosure>, position: PositionType) -> TokenStream {
+	/// Get all the named arguments from a pattern
 	fn get_args(p: &Pat) -> Vec<Ident> {
 		match p {
 			Pat::Ident(ident) => vec![ident.ident.clone()],
@@ -298,6 +304,8 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &Option<Expr
 			_ => Vec::new()
 		}
 	}
+	/// Turns a pattern into a value that would match the pattern. Replaces non-literal values with
+	/// `Default::default()` or a better estimate if possible
 	fn expected(p: &Pat) -> TokenStream {
 		match p {
 			Pat::Lit(lit) => quote!{ #lit },

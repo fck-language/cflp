@@ -2,7 +2,9 @@ use std::collections::HashSet;
 use syn::{GenericArgument, GenericParam, Lifetime, LifetimeParam, PathArguments, PathSegment, Type, TypeParamBound};
 use crate::prelude::{Group, Rules, Value, RuleInner, SaveType, SplitRule};
 
+/// Trait to get lifetimes
 pub trait Lifetimes {
+	/// Get the lifetimes from `self`
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>);
 }
 

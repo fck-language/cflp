@@ -1,4 +1,7 @@
-#[allow(rustdoc::invalid_rust_codeblocks)]
+//! # Saving code gen
+//!
+//! This module contains code for building impl sections for elements that are saved. There are
+//! calls to functions in the [non-saving](crate::build::no_save) equivalent
 
 use std::backtrace::Backtrace;
 use proc_macro2::TokenStream;

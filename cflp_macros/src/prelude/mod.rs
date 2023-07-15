@@ -38,7 +38,11 @@ pub struct Meta {
 	pub cmp_type: Type,
 	/// Token to token data map
 	pub map_fn: Option<ExprClosure>,
-	/// Is the result wrapped
+	/// If the result is wrapped, contains a `Some` of the type with the wrapped data, otherwise
+	/// is `None`.
+	///
+	/// For example, if the result is wrapped with a `usize` (`NodeWrapper<Self, usize>`), this
+	/// would be `Some(usize)`
 	pub wrapped: Option<Type>,
 	/// Name of the type deriving `Parser`
 	pub _self: Ident
@@ -49,9 +53,9 @@ pub struct Meta {
 /// All the match rules for the type deriving the `Parser` trait
 #[derive(Clone)]
 pub enum Rules {
-	/// Single rule. Used for [`struct`]
+	/// Single rule. Used for structs
 	Single(RuleInner),
-	/// Single rule. Used for [`enum`] variants
+	/// Single rule. Used for enum variants
 	Multiple { first: RuleInner, rem: Vec<RuleInner> },
 }
 
@@ -61,8 +65,8 @@ pub enum Rules {
 #[derive(Clone)]
 pub struct RuleInner {
 	/// Item the rule matches.
-	/// - For a struct, this is the name of the struct as a `Path`.
-	/// - For an enum, this is the enum name, followed by the variant name
+	/// - For a struct, this is the name of the struct as a `Path` e.g. `MyStruct`
+	/// - For an enum, this is the enum name, followed by the variant name e.g. `MyEnum::MyVariant`
 	pub name: Path,
 	/// The rule match
 	pub inner: RuleInnerMatch,
@@ -73,9 +77,9 @@ pub struct RuleInner {
 /// Wrapper around a rule to save if the type (struct or enum variant) is named or unnamed
 #[derive(Clone)]
 pub enum RuleInnerMatch {
-	/// Named type
+	/// Named type such as for `MyStruct { a: 1, b: 2 }`
 	Named(Vec<Ident>, SplitRule),
-	/// Unnamed type
+	/// Unnamed type such as for `MyStruct(1, 2)`
 	Unnamed(SplitRule)
 }
 
@@ -88,24 +92,31 @@ pub enum RuleInnerMatch {
 pub enum SplitRule {
 	/// Rule with only one base group in it
 	Single(Box<Group>),
-	/// Rule with more that one base group in it
+	/// Rule with more that one base group in it. Note that [`middle`](Self::Other::middle) is not
+	/// guaranteed to contain elements
 	Other { start: Box<Group>, middle: Vec<Group>, end: Box<Group> }
 }
 
-/// Single or group of values
+/// # Singular value
+///
+/// This is the base type for rules. It contains all the possible single types, and a group type.
 #[derive(Clone)]
 pub enum Value {
 	/// Single value
 	Single(Expr),
 	/// Call to another rule
 	Call(Ident),
-	/// Saved value
+	/// Saved value. See [`SaveType`]
 	Save { group: SaveType, boxed: bool },
-	/// Group of values
+	/// Group of values. The `bool` is `true` iff the group contains a [save](Value::Save),
+	/// otherwise it's `false`
 	Group(SplitRule, bool),
 }
 
-/// Closures on a single or group of values
+/// # Group of values
+///
+/// This is a group of values under different closures. For each variant, the `bool` represents the
+/// same as it does for [`Value::Group`]
 #[derive(Clone)]
 pub enum Group {
 	/// Literal group ()
@@ -139,7 +150,9 @@ pub enum SaveType {
 /// be wrapped in a `Result`
 #[derive(Copy, Clone)]
 pub enum ReturnType {
+	/// Should return out of a function (using `return`)
 	Function,
+	/// Should break to a lifetime (using `break 'lifetime`)
 	Lifetime(u8, bool),
 }
 

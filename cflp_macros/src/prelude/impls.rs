@@ -273,6 +273,7 @@ impl RuleInnerMatch {
 }
 
 impl SplitRule {
+	/// Count the number of match groups
 	pub fn count_matches(&self) -> usize {
 		match self {
 			SplitRule::Single(inner) => inner.count_matches(),

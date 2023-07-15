@@ -1,6 +1,6 @@
 //! # Parser impls
 //!
-//! [`Parse`](Parse) impls for types in [`mod.rs`](crate::prelude)
+//! [`Parse`](syn::Parse) impls for types in [`mod.rs`](crate::prelude)
 
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;

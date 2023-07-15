@@ -115,6 +115,7 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 	}
 }
 
+/// Build the impl for the `Parser` trait
 fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 	let mut lifetimes = HashSet::new();
 	r.lifetimes(&meta.cmp_type, &mut lifetimes);

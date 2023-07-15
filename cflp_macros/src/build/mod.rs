@@ -1,3 +1,7 @@
+//! # Impl build module
+//!
+//! This module contains all the code for generating (building) the `Parser` impl
+
 mod no_save;
 mod save;
 mod start;
