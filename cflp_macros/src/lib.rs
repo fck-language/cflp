@@ -1,6 +1,4 @@
-//! # cflp macros
-//!
-//! Derive macro for `cflp::Parser` trait
+#![doc=include_str!("../README.md")]
 #![cfg_attr(
     docs,
     feature(doc_auto_cfg),
@@ -18,7 +16,7 @@ use proc_macro::TokenStream as pmTS;
 use proc_macro2::{Span, TokenStream};
 use std::collections::HashSet;
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse, Ident, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, Pat};
+use syn::{parse, Ident, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, Pat, PathArguments, AngleBracketedGenericArguments, GenericParam, GenericArgument};
 use crate::{
 	lifetimes::Lifetimes,
 	prelude::{Meta, StructParserAttribute, MacroInner, RuleInner, Rules, ReturnType}
@@ -33,6 +31,10 @@ pub fn derive_parser(item: pmTS) -> pmTS {
 		Ok(ok) => ok,
 		Err(err) => return pmTS::from(err.to_compile_error().to_token_stream())
 	};
+	// let name = format!(" {} ", input.meta._self.to_token_stream());
+	// let out = build_impl(input.rules, input.meta);
+	// eprintln!("{:-^100}\n{}", name, out);
+	// out.into()
 	pmTS::from(build_impl(input.rules, input.meta))
 }
 
@@ -43,7 +45,26 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 		if let Some(attr) = item.attrs.iter().position(|attr| attr.path().get_ident().map(|i| i.to_string()) == Some("parser".to_string())) {
 			let attr = &item.attrs[attr];
 			let mut out = attr.parse_args::<StructParserAttribute>()?;
-			out.meta._self = item.ident.clone();
+			let _self_arguments = if item.generics.lt_token.is_some() {
+				let mut args = Vec::new();
+				for i in item.generics.params.iter() {
+					match i {
+						GenericParam::Lifetime(l) => args.push(GenericArgument::Lifetime(l.lifetime.clone())),
+						GenericParam::Type(c) => return Err(Error::new(c.span(), "Parser cannot be derived for types with type generics")),
+						GenericParam::Const(c) => return Err(Error::new(c.span(), "Parser cannot be derived for types with constant generics"))
+					}
+				}
+				PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+					colon2_token: None,
+					lt_token: Default::default(),
+					args: Punctuated::from_iter(args),
+					gt_token: Default::default(),
+				})
+			} else { PathArguments::None };
+			out.meta._self = PathSegment {
+				ident: item.ident.clone(),
+				arguments: _self_arguments
+			};
 			let rules = match &item.fields {
 				Fields::Named(fields) => RuleInnerMatch::Named(
 					fields.named.iter().map(|t| t.ident.clone().unwrap()).collect(),
@@ -72,7 +93,26 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 			return Err(Error::new(item.span(), "Parser derive requires a #[parser(...)] attribute"))
 		};
 		let mut meta = attr.parse_args::<Meta>()?;
-		meta._self = item.ident.clone();
+		let _self_arguments = if item.generics.lt_token.is_some() {
+			let mut args = Vec::new();
+			for i in item.generics.params.iter() {
+				match i {
+					GenericParam::Lifetime(l) => args.push(GenericArgument::Lifetime(l.lifetime.clone())),
+					GenericParam::Type(c) => return Err(Error::new(c.span(), "Parser cannot be derived for types with type generics")),
+					GenericParam::Const(c) => return Err(Error::new(c.span(), "Parser cannot be derived for types with constant generics"))
+				}
+			}
+			PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+				colon2_token: None,
+				lt_token: Default::default(),
+				args: Punctuated::from_iter(args),
+				gt_token: Default::default(),
+			})
+		} else { PathArguments::None };
+		meta._self = PathSegment {
+			ident: item.ident.clone(),
+			arguments: _self_arguments
+		};
 		// for each variant, parse the #[parser(...)] attribute as a RuleInnerMatch and add it to an accumulator
 		let mut rules = Vec::new();
 		for variant in item.variants.iter() {
@@ -222,9 +262,7 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 							use cflp::NodeData;
 							let mut start = <#pos_type as Default>::default();
 							let mut end = <#pos_type as Default>::default();
-						}, quote!{
-							NodeWrapper { node: t, start, end }
-						}
+						}, quote!{ cflp::NodeWrapper { node: t, start, end } }
 					)
 				} else { (quote!{}, quote!{ t }) };
 				let first_match = if single_match_rules.len() > 1 {

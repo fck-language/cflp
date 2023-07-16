@@ -177,7 +177,7 @@ mod expanded {
                 }
             };
             let next = src.next();
-            if next != Some(TokType::Plus) {
+            if next.clone().map(|t| t.t) != Some(TokType::Plus) {
                 return Err(cflp::Error {
                     expected: TokType::Plus,
                     found: next,
@@ -239,10 +239,10 @@ mod expanded {
                                 node: Expr::Other(t.clone()),
                             })
                         }
-                        t => {
+                        _ => {
                             Err(cflp::Error {
                                 expected: TokType::Literal(Default::default()),
-                                found: Some(t),
+                                found: Some(t_unwrapped),
                             })
                         }
                     }

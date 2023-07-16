@@ -6,7 +6,7 @@
 use std::backtrace::Backtrace;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{ExprClosure, Ident, Pat, Path, Token, Type};
+use syn::{ExprClosure, Ident, Pat, Path, PathArguments, PathSegment, Token, Type};
 use syn::punctuated::Punctuated;
 use crate::prelude::{Value, Group, ReturnType, SaveType, SplitRule};
 
@@ -17,7 +17,7 @@ impl Value {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Save { group: SaveType::Call(rule), boxed } => build_value_save_call(rule, return_type, *boxed),
-			Value::Save { group: SaveType::Other(pat), .. } => build_value_save_other(pat, return_type),
+			Value::Save { group: SaveType::Other(pat), .. } => build_value_save_other(pat, return_type, map_fn),
 			Value::Group(g, _) => g.build_save(n, caller, return_type, match_type, map_fn, wrapped)
 		}
 	}
@@ -105,7 +105,7 @@ pub fn build_match_arm_err(pattern: &Pat) -> (TokenStream, TokenStream) {
 	let expected = value_save_other_expected(pattern);
 	(
 		quote!{ _ => Err(cflp::Error { expected: #expected, found: None }) },
-		quote!{ t => Err(cflp::Error { expected: #expected, found: Some(t) }) }
+		quote!{ _ => Err(cflp::Error { expected: #expected, found: Some(t_unwrapped) }) }
 	)
 }
 
@@ -159,16 +159,16 @@ fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: Ret
 }
 
 /// Matches the returned value of a rule call and optionally boxes and/or wrap the result in an `Ok`
-fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool) -> TokenStream {
+fn build_value_save_call(mut e: &Path, return_type: ReturnType, is_boxed: bool) -> TokenStream {
 	let ok_ret = match (is_boxed, return_type.is_wrapped()) {
-		(true, true) => quote!{ Ok(NodeWrapper{ node: Box::new(t.node), start: t.start, end: t.end }) },
-		(true, false) => quote!{ NodeWrapper{ node: Box::new(t.node), start: t.start, end: t.end } },
+		(true, true) => quote!{ Ok(Box::new(t)) },
+		(true, false) => quote!{ Box::new(t) },
 		(false, true) => quote!{ Ok(t) },
 		(false, false) => quote!{ t }
 	};
 	let ret = return_type.to_token_stream(quote!{Err(e)});
 	quote!{
-		match #e::parse(src) {
+		match <#e as cflp::Parser<_, _, _>>::parse(src) {
 			Ok(t) => #ok_ret,
 			Err(e) => #ret
 		}
@@ -182,7 +182,7 @@ fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool) -> T
 /// 	_ => Err(err_inner)
 /// };
 /// ```
-fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
+fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &Option<ExprClosure>) -> TokenStream {
 	let returned_args = value_save_other_get_args(p);
 	
 	let ok_arm = if returned_args.is_empty() {
@@ -202,9 +202,14 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType) -> TokenStream {
 	
 	let expect = value_save_other_expected(p);
 	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { found: next, expected: #expect }) });
+	let match_expr = if let Some(umap_fn) = map_fn {
+		quote!{ next.clone().map(#umap_fn) }
+	} else {
+		quote!{ next }
+	};
 	quote!{
 		let next = src.next();
-		match next {
+		match #match_expr {
 			#ok_arm,
 			_ => #err
 		}

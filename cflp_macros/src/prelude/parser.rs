@@ -5,7 +5,7 @@
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
-use syn::{bracketed, parenthesized, Token, Type};
+use syn::{bracketed, parenthesized, PathSegment, Token, Type};
 use syn::punctuated::Punctuated;
 use crate::prelude::{Meta, Value, Group, StructParserAttribute, SaveType, SplitRule};
 
@@ -25,7 +25,7 @@ impl Parse for Meta {
 			input.parse::<Token![,]>()?;
 			Some(input.parse()?)
 		} else { None };
-		Ok(Self { tok_type, cmp_type, map_fn, wrapped, _self: Ident::new("Self", Span::mixed_site()) })
+		Ok(Self { tok_type, cmp_type, map_fn, wrapped, _self: PathSegment::from(Ident::new("Self", Span::mixed_site())) })
 	}
 }
 

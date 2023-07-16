@@ -263,8 +263,8 @@ fn build_value_call(e: &Ident, return_type: ReturnType, position: PositionType) 
 /// ```
 fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool, position: PositionType) -> TokenStream {
 	let ok_ret = match (is_boxed, return_type.is_wrapped()) {
-		(true, true) => quote!{ Ok(NodeWrapper{ node: Box::new(t.node), start: t.start, end: t.end }) },
-		(true, false) => quote!{ NodeWrapper{ node: Box::new(t.node), start: t.start, end: t.end } },
+		(true, true) => quote!{ Ok(Box::new(t)) },
+		(true, false) => quote!{ Box::new(t) },
 		(false, true) => quote!{ Ok(t) },
 		(false, false) => quote!{ t }
 	};

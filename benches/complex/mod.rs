@@ -14,11 +14,9 @@
 //! )
 //! ```
 
-use criterion::Criterion;
 use cflp::Parser;
+use criterion::Criterion;
 
-mod rule;
-mod rule_no_types;
 mod attr;
 mod custom;
 mod prelude;
@@ -30,32 +28,91 @@ use prelude::*;
 //     test = test - 3;
 // }
 const ITER: [Token; 19] = [
-	Token{ p: (0, 1), t: TokenType::Kwd(Kwd::If) },
-	Token{ p: (1, 2), t: TokenType::OP },
-	Token{ p: (1, 2), t: TokenType::Literal(1) },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::Plus) },
-	Token{ p: (1, 2), t: TokenType::Literal(2) },
-	Token{ p: (1, 2), t: TokenType::CP },
-	Token{ p: (1, 2), t: TokenType::OB },
-	Token{ p: (1, 2), t: TokenType::Kwd(Kwd::Let) },
-	Token{ p: (1, 2), t: TokenType::Ident("test") },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::Eq) },
-	Token{ p: (1, 2), t: TokenType::Literal(5) },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::SCol) },
-	Token{ p: (1, 2), t: TokenType::Ident("test") },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::Eq) },
-	Token{ p: (1, 2), t: TokenType::Ident("test") },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::Minus) },
-	Token{ p: (1, 2), t: TokenType::Literal(3) },
-	Token{ p: (1, 2), t: TokenType::Punc(Punc::SCol) },
-	Token{ p: (1, 2), t: TokenType::CB },
+    Token {
+        p: (0, 1),
+        t: TokenType::Kwd(Kwd::If),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::OP,
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Literal(1),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::Plus),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Literal(2),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::CP,
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::OB,
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Kwd(Kwd::Let),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Ident("test"),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::Eq),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Literal(5),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::SCol),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Ident("test"),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::Eq),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Ident("test"),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::Minus),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Literal(3),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::Punc(Punc::SCol),
+    },
+    Token {
+        p: (1, 2),
+        t: TokenType::CB,
+    },
 ];
 
 pub fn main(c: &mut Criterion) {
-	let mut g = c.benchmark_group("Complex");
-	g.bench_function("rule!", |b| b.iter(|| rule::Root::parse(&mut ITER.iter())));
-	g.bench_function("rule_no_types!", |b| b.iter(|| rule_no_types::Root::parse(&mut ITER.iter())));
-	g.bench_function("attribute", |b| b.iter(|| attr::Root::parse(&mut ITER.iter())));
-	g.bench_function("hand written", |b| b.iter(|| custom::Root::parse(&mut ITER.iter())));
-	g.finish()
+    let mut g = c.benchmark_group("Complex");
+    g.bench_function("derived", |b| {
+        b.iter(|| attr::Root::parse(&mut ITER.iter()))
+    });
+    g.bench_function("handwritten", |b| {
+        b.iter(|| custom::Root::parse(&mut ITER.iter()))
+    });
+    g.finish()
 }

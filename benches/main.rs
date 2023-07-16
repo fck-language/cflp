@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main};
 
-mod simple;
 mod complex;
+mod simple;
 
 criterion_group!(simple_parse, simple::main);
 criterion_group!(complex_parse, complex::main);

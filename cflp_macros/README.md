@@ -1,5 +1,5 @@
-This is where the `rule!`, `rule_no_types!`, and `#[parser]` macros are defined. the code is a bit messy so sorry for that.
+# cflp macros
 
-Any use of this will require the parent crate [cflp](https://github.com/fck-language/cflp)
+THis crate provides the derive macro for the `cflp` crate.
 
-[Documentation](https://fck-language.github.io/cflp)
+Refer to the [`cflp` crate](https://github.com/fck-language/cflp) for usage

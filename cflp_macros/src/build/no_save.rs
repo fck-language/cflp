@@ -75,11 +75,11 @@ fn build_value_single(e: &Expr, return_type: ReturnType, map_fn: &Option<ExprClo
 }
 
 /// ```rust
-/// if let Err(E) = e::parse(src) { return_type.to_token_stream(Err(e)) }
+/// if let Err(E) = <e as cflp::Parser>::parse(src) { return_type.to_token_stream(Err(e)) }
 /// ```
 fn build_value_call(e: &Ident, return_type: ReturnType) -> TokenStream {
 	let ret_err = return_type.to_token_stream(quote!{Err(e)});
-	quote!{if let Err(e) = #e::parse(src) { #ret_err }}
+	quote!{if let Err(e) = <#e as cflp::Parser<_, _, _>>::parse(src) { #ret_err }}
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,

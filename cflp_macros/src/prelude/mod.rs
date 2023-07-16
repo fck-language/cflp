@@ -1,6 +1,6 @@
 //! This module contains all the types used throughout the codebase
 
-use syn::{ExprClosure, Path, Type, Ident, Expr, Pat};
+use syn::{ExprClosure, Path, Type, Ident, Expr, Pat, PathSegment};
 
 mod impls;
 mod parser;
@@ -45,7 +45,7 @@ pub struct Meta {
 	/// would be `Some(usize)`
 	pub wrapped: Option<Type>,
 	/// Name of the type deriving `Parser`
-	pub _self: Ident
+	pub _self: PathSegment
 }
 
 /// # Rules
