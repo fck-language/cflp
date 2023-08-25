@@ -143,7 +143,7 @@ pub enum SaveType {
 	/// Anything that's not a call to another rule is interpreted as a [pattern](syn::Pat). This
 	/// will normally either be a [literal](syn::Pat::Ident), or a [named type](syn::Pat::Struct)
 	/// such as `Foo { a, .. }` or an [un-named type](syn::Pat::TupleStruct) such as `Bar(_, b)`
-	Other(Pat),
+	Other{ pattern: Pat, explode: bool },
 }
 
 /// Lifetime enum. Used to determine where errors should return to and if a successful result should

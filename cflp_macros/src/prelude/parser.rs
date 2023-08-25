@@ -114,7 +114,11 @@ impl Parse for SaveType {
 			input.parse::<Token![@]>()?;
 			Ok(Self::Call(input.parse()?))
 		} else {
-			Ok(Self::Other(syn::Pat::parse_single(input)?))
+			let explode = if input.peek(Token![*]) {
+				input.parse::<Token![*]>()?;
+				true
+			} else { false };
+			Ok(Self::Other { pattern: syn::Pat::parse_single(input)?, explode })
 		}
 	}
 }

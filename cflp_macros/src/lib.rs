@@ -16,13 +16,44 @@ use proc_macro::TokenStream as pmTS;
 use proc_macro2::{Span, TokenStream};
 use std::collections::HashSet;
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse, Ident, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, Pat, PathArguments, AngleBracketedGenericArguments, GenericParam, GenericArgument};
+use syn::{parse, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, PathArguments, AngleBracketedGenericArguments, GenericParam, GenericArgument};
 use crate::{
 	lifetimes::Lifetimes,
 	prelude::{Meta, StructParserAttribute, MacroInner, RuleInner, Rules, ReturnType}
 };
-use crate::build::{build_match_arm, build_match_arm_err};
-use crate::prelude::{Group, RuleInnerMatch, SaveType, SplitRule, Value};
+use crate::build::build_match_arm_err;
+use crate::prelude::{Group, RuleInnerMatch, SplitRule};
+
+/// Derive `PartialEq` for references so that `&Self: PartialEq<Self>`:
+/// ```
+/// # #[derive(PartialEq)]
+/// # struct Example{}
+/// impl PartialEq<Example> for &Example {
+/// 	fn eq(&self, other: &Example) -> bool {
+/// 		self == other
+///		}
+/// }
+/// ```
+///
+/// Requires that `Self: PartialEq<Self>`
+#[proc_macro_derive(PartialEqRef)]
+pub fn derive_partial_eq_ref(raw_item: pmTS) -> pmTS {
+	let name = if let Ok(item) = parse::<ItemStruct>(raw_item.clone()) {
+		item.ident
+	} else {
+		match parse::<ItemEnum>(raw_item.clone()) {
+			Ok(item) => item.ident,
+			Err(err) => return pmTS::from(err.to_compile_error())
+		}
+	};
+	pmTS::from(quote! {
+		impl PartialEq<#name> for &#name {
+			fn eq(&self, other: &#name) -> bool {
+				self == other
+			}
+		}
+	})
+}
 
 /// Derive macro for `cflp::Parser`
 #[proc_macro_derive(Parser, attributes(parser))]
@@ -31,10 +62,6 @@ pub fn derive_parser(item: pmTS) -> pmTS {
 		Ok(ok) => ok,
 		Err(err) => return pmTS::from(err.to_compile_error().to_token_stream())
 	};
-	// let name = format!(" {} ", input.meta._self.to_token_stream());
-	// let out = build_impl(input.rules, input.meta);
-	// eprintln!("{:-^100}\n{}", name, out);
-	// out.into()
 	pmTS::from(build_impl(input.rules, input.meta))
 }
 
@@ -73,8 +100,9 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 				Fields::Unnamed(_) => RuleInnerMatch::Unnamed(out.rule),
 				Fields::Unit => return Err(Error::new(item.span(), "Cannot derive the Parser trait on a unit struct")),
 			};
-			if rules.count_matches() != item.fields.len() {
-				return Err(Error::new(attr.span(), "Attribute number of save groups does not match the number of fields"))
+			let matches = rules.count_matches();
+			if matches != item.fields.len() {
+				return Err(Error::new(item.span(), format!("Attribute number of save groups does not match the number of fields: {}(Fields) != {}(Saves)", item.fields.len(), matches)))
 			}
 			Ok(MacroInner {
 				meta: out.meta, rules: Rules::Single(RuleInner {
@@ -193,46 +221,20 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 		}
 		Rules::Multiple { first, mut rem } => {
 			// split into simple (single ident) and others
-			fn is_single_match(t: &RuleInner) -> Option<(&Path, Option<&Vec<Ident>>, Pat)> {
-				let names;
-				if let SplitRule::Single(g) = match &t.inner {
-					RuleInnerMatch::Named(n, s) => {
-						names = Some(n);
-						s
-					},
-					RuleInnerMatch::Unnamed(s) => {
-						names = None;
-						s
-					}
-				} {
-					if let Group::Literal(ref v, _) = **g {
-						match v {
-							Value::Single(e) => {
-								Some((&t.name, names, Pat::Verbatim(e.to_token_stream())))
-							}
-							Value::Save { group: SaveType::Other(pat), .. } => {
-								Some((&t.name, names, pat.clone()))
-							}
-							_ => None
-						}
-					} else { None }
-				} else { None }
-			}
 			let first_clone = first.clone();
-			let mut single_match_rules = if let Some(t) = is_single_match(&first_clone) {
+			let mut single_match_rules = if let Some(t) = first_clone.is_singular() {
 				vec![(0, t)]
 			} else { vec![] };
 			for (n, i) in rem.iter().enumerate() {
-				if let Some(t) = is_single_match(&i) { single_match_rules.push((n + 1, t)) }
+				if let Some(t) = i.is_singular() { single_match_rules.push((n + 1, t)) }
 			}
 			if single_match_rules.len() == rem.len() + 1 {
 				// all rules are simple match rules
-				let (_, (_, _, first_arm)) = single_match_rules.first().unwrap();
+				let (_, (_, first_arm, _)) = single_match_rules.first().unwrap();
 				let (err, err_wrapped) = build_match_arm_err(first_arm);
 				let mut arms = Vec::new();
-				let is_wrapped = meta.wrapped.is_some();
-				for (_, (var, args, pattern)) in single_match_rules {
-					arms.push(build_match_arm(var, args, &pattern, is_wrapped));
+				for (_, (rule, pattern, saves)) in single_match_rules {
+					arms.push(rule.match_arm(pattern, meta.wrapped.is_some(), saves));
 				}
 				let pre = if let Some(pos_type) = &meta.wrapped {
 					let tok_type = &meta.tok_type;
@@ -266,11 +268,11 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 					)
 				} else { (quote!{}, quote!{ t }) };
 				let first_match = if single_match_rules.len() > 1 {
-					let (_, (_,_, first_arm)) = single_match_rules.first().unwrap();
+					let (_, (_, first_arm, _)) = single_match_rules.first().unwrap();
 					let (err, err_wrapped) = build_match_arm_err(first_arm);
 					let mut arms = Vec::new();
-					for (_, (var, args, pattern)) in single_match_rules.iter() {
-						arms.push(build_match_arm(var, *args, pattern, meta.wrapped.is_some()));
+					for (_, (rule, pattern, saves)) in single_match_rules.iter() {
+						arms.push(rule.match_arm(pattern.clone(), meta.wrapped.is_some(), *saves));
 					}
 					let pre_match = if let Some(pos_type) = &meta.wrapped {
 						let tok_type = &meta.tok_type;

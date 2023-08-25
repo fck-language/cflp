@@ -58,7 +58,7 @@ impl Value {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function"),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function"),
 			Value::Save { group: SaveType::Call(rule), boxed } => build_value_save_call(rule, return_type, *boxed, position),
-			Value::Save { group: SaveType::Other(pat), .. } => build_value_save_other(pat, return_type, map_fn, position),
+			Value::Save { group: SaveType::Other { pattern, .. }, .. } => build_value_save_other(pattern, return_type, map_fn, position),
 			Value::Group(g, _) => {
 				let inner_return_type = return_type.set_wrapped(false);
 				let mut out = Vec::new();

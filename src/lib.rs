@@ -12,7 +12,7 @@ use std::fmt::{Debug, Formatter};
 /// # Parser derive macro
 ///
 /// Derive macro used for the [`Parser`] trait. See the book for how to use this macro
-pub use cflp_macros::Parser;
+pub use cflp_macros::{Parser, PartialEqRef};
 
 /// # Parser error struct
 ///

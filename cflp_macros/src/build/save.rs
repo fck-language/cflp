@@ -6,7 +6,7 @@
 use std::backtrace::Backtrace;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{ExprClosure, Ident, Pat, Path, PathArguments, PathSegment, Token, Type};
+use syn::{ExprClosure, Ident, Pat, Path, Token, Type};
 use syn::punctuated::Punctuated;
 use crate::prelude::{Value, Group, ReturnType, SaveType, SplitRule};
 
@@ -17,7 +17,7 @@ impl Value {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Save { group: SaveType::Call(rule), boxed } => build_value_save_call(rule, return_type, *boxed),
-			Value::Save { group: SaveType::Other(pat), .. } => build_value_save_other(pat, return_type, map_fn),
+			Value::Save { group: SaveType::Other{ pattern, .. }, .. } => build_value_save_other(pattern, return_type, map_fn),
 			Value::Group(g, _) => g.build_save(n, caller, return_type, match_type, map_fn, wrapped)
 		}
 	}
@@ -109,21 +109,38 @@ pub fn build_match_arm_err(pattern: &Pat) -> (TokenStream, TokenStream) {
 	)
 }
 
-pub fn build_match_arm(var: &Path, wrapped_args: Option<&Vec<Ident>>, pattern: &Pat, wrapped: bool) -> TokenStream {
+pub fn build_match_arm(var: &Path, wrapped_args: Option<&Vec<Ident>>, pattern: &Pat, wrapped: bool, saves: bool) -> TokenStream {
 	let returned_args = value_save_other_get_args(pattern);
 	if let Some(args) = wrapped_args {
-		let field_args = args.iter().zip(returned_args.iter()).map(|(f, v)| quote!{ #f: #v.clone() });
-		if wrapped {
-			quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var{ #(#field_args),* } }) }
+		if returned_args.is_empty() {
+			let inner_name = args.first().unwrap();
+			if wrapped {
+				quote!{ __next_unwrapped @ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var{ #inner_name: __next_unwrapped.clone() } }) }
+			} else {
+				quote!{ __next_unwrapped @ #pattern => Ok(#var{ #inner_name: __next_unwrapped.clone() }) }
+			}
 		} else {
-			quote!{ #pattern => Ok(#var{ #(#field_args),* }) }
+			let field_args = args.iter().zip(returned_args.iter()).map(|(f, v)| quote!{ #f: #v.clone() });
+			if wrapped {
+				quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var{ #(#field_args),* } }) }
+			} else {
+				quote!{ #pattern => Ok(#var{ #(#field_args),* }) }
+			}
 		}
 	} else {
-		match (returned_args.len(), wrapped) {
-			(0, true) => quote!{ next_match @ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var }) },
-			(0, false) => quote!{ next_match @ #pattern => Ok(#var) },
-			(_, true) => quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var(#(#returned_args.clone()),*) }) },
-			(_, false) => quote!{ #pattern => Ok(#var(#(#returned_args.clone()),*)) },
+		if returned_args.is_empty() {
+			match (wrapped, saves) {
+				(true, true) => quote!{ __next_unwrapped @ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var(__next_unwrapped.clone()) }) },
+				(true, false) => quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var }) },
+				(false, true) => quote!{ __next_unwrapped @ #pattern => Ok(#var(__next_unwrapped.clone())) },
+				(false, false) => quote!{ #pattern => Ok(#var) }
+			}
+		} else {
+			if wrapped {
+				quote!{ #pattern => Ok(cflp::NodeWrapper { start, end, node: #var(#(#returned_args.clone()),*) }) }
+			} else {
+				quote!{ #pattern => Ok(#var(#(#returned_args.clone()),*)) }
+			}
 		}
 	}
 }
@@ -159,7 +176,7 @@ fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: Ret
 }
 
 /// Matches the returned value of a rule call and optionally boxes and/or wrap the result in an `Ok`
-fn build_value_save_call(mut e: &Path, return_type: ReturnType, is_boxed: bool) -> TokenStream {
+fn build_value_save_call(e: &Path, return_type: ReturnType, is_boxed: bool) -> TokenStream {
 	let ok_ret = match (is_boxed, return_type.is_wrapped()) {
 		(true, true) => quote!{ Ok(Box::new(t)) },
 		(true, false) => quote!{ Box::new(t) },
@@ -217,7 +234,7 @@ fn build_value_save_other(p: &Pat, return_type: ReturnType, map_fn: &Option<Expr
 }
 
 /// Extract values available from matching a [pattern](syn::Pat) in a `match` expression
-fn value_save_other_get_args(p: &Pat) -> Vec<Ident> {
+pub fn value_save_other_get_args(p: &Pat) -> Vec<Ident> {
 	match p {
 		Pat::Ident(ident) => vec![ident.ident.clone()],
 		Pat::Paren(inner) => value_save_other_get_args(&inner.pat),

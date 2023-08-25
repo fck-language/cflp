@@ -52,8 +52,8 @@ mod nodes {
     #[derive(Debug, Clone, Parser)]
     #[parser(Token, Token)]
     pub enum Sep {
-        #[parser(Token::Comma)]
-        Comma,
+        #[parser([Token::Comma])]
+        Comma(Token),
         #[parser(Token::SemiColon)]
         SemiColon,
         #[parser(Token::Dot, Token::Dot)]
@@ -61,6 +61,7 @@ mod nodes {
     }
 }
 
+#[ignore]
 mod expanded {
     #![allow(dead_code, unused)]
     use cflp::Parser;
