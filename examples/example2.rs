@@ -1,163 +1,336 @@
-//! An example with an or rule
+//! A more momplex example
 //!
-//! This demonstrates how to have a rule that matches multiple things, and how you can name the
-//! generated variants
+//! This example demonstrates the use of [`NodeData`] and [`NodeWrapper`] to preserve positional
+//! data when parsing. It also requires the use of boxed matches.
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
-	OP, CP,
-	Literal(u8),
-	Other(char),
+mod prelude {
+    //! General things we need as inputs
+    use cflp::NodeData;
+    
+    #[derive(Debug, Copy, Clone, PartialEq)]
+    pub enum TokType {
+        OP,
+        CP,
+        Plus,
+        Literal(u8),
+        Other(char),
+    }
+    
+    #[derive(Debug)]
+    pub struct Token {
+        pub ps: usize,
+        pub pe: usize,
+        pub t: TokType,
+    }
+    
+    impl PartialEq<TokType> for &Token {
+        fn eq(&self, other: &TokType) -> bool { &self.t == other }
+    }
+    
+    impl NodeData<usize> for Token {
+        fn start(&self) -> usize { self.ps }
+        fn end(&self) -> usize { self.pe }
+    }
 }
 
-#[derive(Debug)]
-pub struct Token {
-	pub ps: usize,
-	pub pe: usize,
-	pub _type: TokenType,
+mod nodes {
+    //! This module contains the structs and enums we'll be deriving the [`Parser`] trait for.
+    //!
+    //! The expended impls are in the [`expanded`](crate::expanded) module
+    use cflp::{NodeWrapper, Parser};
+    use crate::{Token, TokType};
+    
+    /// # Root match struct
+    ///
+    /// Matches as many [`Add`] repetitions as possible
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, TokType, |t| t.t, usize; ([@Add])*)]
+    pub struct Root(pub Vec<NodeWrapper<Add, usize>>);
+    
+    /// # Add struct
+    ///
+    /// Matches one [expression](Expr) plus another [expression](Expr)
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, TokType, |t| t.t, usize; [[@Expr]], TokType::Plus, [[@Expr]])]
+    pub struct Add {
+        pub left: NodeWrapper<Box<Expr>, usize>,
+        pub right: NodeWrapper<Box<Expr>, usize>
+    }
+    
+    /// # Expression
+    ///
+    /// This matches either an [add expression](Add) in parentheses, a digits (`u8`), or a
+    /// character (`char`)
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, TokType, |t: &Token| t.t, usize)]
+    pub enum Expr {
+        #[parser(TokType::OP, [@Add], TokType::CP)]
+        Paren { inner: NodeWrapper<Add, usize> },
+        #[parser([TokType::Literal(t)])]
+        Lit(u8),
+        #[parser([TokType::Other(t)])]
+        Other(char),
+    }
 }
 
-impl PartialEq<TokenType> for &Token {
-	fn eq(&self, other: &TokenType) -> bool {
-		&self._type == other
-	}
+mod expanded {
+    //! Expanded [`Parser`](cflp::Parser) impls from the derive macro
+    //!
+    //! *Please note*: This section may be highlighted as including errors. The impls do not contain
+    //! errors. I don't know why this happens
+    // You need to import cflp::Parser because the attribute macros won't do it for you
+    use cflp::{Parser, NodeWrapper};
+    use crate::{Token, TokType};
+    
+    #[derive(Debug, Clone)]
+    pub struct Root(pub Vec<NodeWrapper<Add, usize>>);
+    
+    impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Root, usize>> for Root {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+            src: &mut T,
+        ) -> Result<cflp::NodeWrapper<Root, usize>, cflp::Error<&'a Token, TokType>> {
+            use cflp::NodeData;
+            let mut start = Default::default();
+            let mut end = Default::default();
+            let v_0 = {
+                let mut v_0_out = Vec::new();
+                let src_old = src.clone();
+                match 'l0: {
+                    let v_0_out_0 = {
+                        match Add::parse(src) {
+                            Ok(t) => {
+                                start = t.start();
+                                end = t.end();
+                                t
+                            }
+                            Err(e) => break 'l0 Err(e),
+                        }
+                    };
+                    Ok(v_0_out_0)
+                } {
+                    Ok(t) => v_0_out.push(t),
+                    _ => {
+                        *src = src_old;
+                        start = Default::default();
+                        end = Default::default();
+                    }
+                }
+                if !v_0_out.is_empty() {
+                    loop {
+                        let src_old = src.clone();
+                        let end_old = end;
+                        match 'l0: {
+                            let v_0_out_0 = {
+                                match Add::parse(src) {
+                                    Ok(t) => {
+                                        end = t.end();
+                                        t
+                                    }
+                                    Err(e) => break 'l0 Err(e),
+                                }
+                            };
+                            Ok(v_0_out_0)
+                        } {
+                            Ok(t) => v_0_out.push(t),
+                            _ => {
+                                *src = src_old;
+                                end = end_old;
+                                break;
+                            }
+                        }
+                    }
+                }
+                v_0_out
+            };
+            return Ok(cflp::NodeWrapper {
+                node: Self(v_0),
+                start,
+                end,
+            });
+        }
+    }
+    
+    #[derive(Debug, Clone)]
+    pub struct Add {
+        pub left: NodeWrapper<Box<Expr>, usize>,
+        pub right: NodeWrapper<Box<Expr>, usize>
+    }
+    
+    impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Add, usize>> for Add {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+            src: &mut T,
+        ) -> Result<cflp::NodeWrapper<Add, usize>, cflp::Error<&'a Token, TokType>> {
+            use cflp::NodeData;
+            let mut start = Default::default();
+            let mut end = Default::default();
+            let left = {
+                match Expr::parse(src) {
+                    Ok(t) => {
+                        start = t.start();
+                        NodeWrapper {
+                            node: Box::new(t.node),
+                            start: t.start,
+                            end: t.end,
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+            let next = src.next();
+            if next.clone().map(|t| t.t) != Some(TokType::Plus) {
+                return Err(cflp::Error {
+                    expected: TokType::Plus,
+                    found: next,
+                });
+            }
+            let right = {
+                match Expr::parse(src) {
+                    Ok(t) => {
+                        end = t.end();
+                        NodeWrapper {
+                            node: Box::new(t.node),
+                            start: t.start,
+                            end: t.end,
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+            return Ok(cflp::NodeWrapper {
+                node: Self { left, right },
+                start,
+                end,
+            });
+        }
+    }
+    
+    #[derive(Debug, Clone)]
+    pub enum Expr {
+        Paren { inner: NodeWrapper<Add, usize> },
+        Lit(u8),
+        Other(char),
+    }
+    
+    impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Expr, usize>> for Expr {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+            src: &mut T,
+        ) -> Result<cflp::NodeWrapper<Expr, usize>, cflp::Error<&'a Token, TokType>> {
+            use cflp::NodeData;
+            let mut start = <usize as Default>::default();
+            let mut end = <usize as Default>::default();
+            let first_err;
+            let src_old = src.clone();
+            match match src.next() {
+                Some(t_unwrapped) => {
+                    let start = <Token as NodeData<usize>>::start(t_unwrapped);
+                    let end = <Token as NodeData<usize>>::end(t_unwrapped);
+                    match (|t: &Token| t.t)(t_unwrapped) {
+                        TokType::Literal(t) => {
+                            Ok(cflp::NodeWrapper {
+                                start,
+                                end,
+                                node: Expr::Lit(t.clone()),
+                            })
+                        }
+                        TokType::Other(t) => {
+                            Ok(cflp::NodeWrapper {
+                                start,
+                                end,
+                                node: Expr::Other(t.clone()),
+                            })
+                        }
+                        _ => {
+                            Err(cflp::Error {
+                                expected: TokType::Literal(Default::default()),
+                                found: Some(t_unwrapped),
+                            })
+                        }
+                    }
+                }
+                _ => {
+                    Err(cflp::Error {
+                        expected: TokType::Literal(Default::default()),
+                        found: None,
+                    })
+                }
+            } {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    first_err = e;
+                    *src = src_old;
+                }
+            }
+            let src_old = src.clone();
+            match 'l0: {
+                let next = src.next();
+                if let Some(__next) = next {
+                    if (|t: &Token| t.t)(__next) != TokType::OP {
+                        break 'l0 Err(cflp::Error {
+                            expected: TokType::OP,
+                            found: next,
+                        });
+                    }
+                    start = __next.start();
+                } else {
+                    break 'l0 Err(cflp::Error {
+                        expected: TokType::OP,
+                        found: next,
+                    })
+                };
+                let inner = {
+                    match Add::parse(src) {
+                        Ok(t) => t,
+                        Err(e) => break 'l0 Err(e),
+                    }
+                };
+                let next = src.next();
+                if let Some(__next) = next {
+                    if (|t: &Token| t.t)(__next) != TokType::CP {
+                        break 'l0 Err(cflp::Error {
+                            expected: TokType::CP,
+                            found: next,
+                        });
+                    }
+                    end = __next.end();
+                } else {
+                    break 'l0 Err(cflp::Error {
+                        expected: TokType::CP,
+                        found: next,
+                    })
+                };
+                break 'l0 Ok(Expr::Paren { inner });
+            } {
+                Ok(t) => return Ok(NodeWrapper { node: t, start, end }),
+                Err(_) => *src = src_old,
+            }
+            return Err(first_err);
+        }
+    }
 }
 
-use cflp::rule;
-// Generate types and parser impls
-rule!(
-	(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
-	// Root(Vec<Expr>)
-	(Root; TokenType::OP, ([@Expr])*, TokenType::CP)
-	// Or rule. Will generate an enum
-	// Expr( u8 | char )
-	(Expr; Literal => [TokenType::Literal; u8]; [TokenType::Other; char])
-);
-
-#[allow(unused_parens, unused_imports)]
-mod equivalent {
-	use super::{Token, TokenType};
-	use cflp::rule;
-	use cflp::Parser;
-	
-	#[derive(Debug, Clone)]
-	pub(crate) struct Root(Vec<(Expr)>);
-	
-	impl<'a> Parser<&'a Token, TokenType> for Root {
-		fn parse<T: Iterator<Item=&'a Token> + Clone>(
-			src: &mut T,
-		) -> Result<Self, cflp::Error<&'a Token, TokenType>> {
-			let next = src.next();
-			if next.clone().map(|t| t._type.clone()) != Some(TokenType::OP) {
-				return Err(cflp::Error {
-					expected: TokenType::OP,
-					found: next,
-				});
-			}
-			let v_1 = {
-				let mut v_1_out = Vec::new();
-				loop {
-					let src_old = src.clone();
-					match 'l0: {
-						let v_1_0_0 = {
-							match Expr::parse(src) {
-								Ok(t) => t,
-								Err(e) => break 'l0 Err(e),
-							}
-						};
-						Ok(v_1_0_0)
-					} {
-						Ok(t) => v_1_out.push(t),
-						Err(_) => {
-							*src = src_old;
-							break;
-						}
-					}
-				}
-				v_1_out
-			};
-			let next = src.next();
-			if next.clone().map(|t| t._type.clone()) != Some(TokenType::CP) {
-				return Err(cflp::Error {
-					expected: TokenType::CP,
-					found: next,
-				});
-			}
-			return Ok(Self(v_1));
-		}
-	}
-	
-	#[derive(Debug, Clone)]
-	pub(crate) enum Expr {
-		Literal(((u8))),
-		Var2(((char))),
-	}
-	
-	impl<'a> Parser<&'a Token, TokenType> for Expr {
-		fn parse<T: Iterator<Item=&'a Token> + Clone>(
-			src: &mut T,
-		) -> Result<Self, cflp::Error<&'a Token, TokenType>> {
-			let first_err;
-			let src_old = src.clone();
-			match 'l0: {
-				let v_0 = {
-					let next = src.next();
-					if let Some(TokenType::Literal(n_0)) = next.map(|t| t._type.clone()) {
-						((n_0))
-					} else {
-						break 'l0 Err(cflp::Error {
-							expected: TokenType::Literal(Default::default()),
-							found: next,
-						});
-					}
-				};
-				break 'l0 Ok(Self::Literal(v_0));
-			} {
-				Ok(t) => return Ok(t),
-				Err(e) => {
-					first_err = e;
-					*src = src_old;
-				}
-			}
-			let src_old = src.clone();
-			match 'l0: {
-				let v_0 = {
-					let next = src.next();
-					if let Some(TokenType::Other(n_0)) = next.map(|t| t._type.clone()) {
-						((n_0))
-					} else {
-						break 'l0 Err(cflp::Error {
-							expected: TokenType::Other(Default::default()),
-							found: next,
-						});
-					}
-				};
-				break 'l0 Ok(Self::Var2(v_0));
-			} {
-				Ok(t) => return Ok(t),
-				Err(_) => *src = src_old,
-			}
-			return Err(first_err);
-		}
-	}
-}
+use nodes::*;
+use prelude::*;
+use cflp::Parser;
 
 fn main() {
-	let sample_input = vec![
-		Token { ps: 0, pe: 1, _type: TokenType::OP },
-		Token { ps: 1, pe: 2, _type: TokenType::Literal(1) },
-		Token { ps: 2, pe: 3, _type: TokenType::Other('b') },
-		Token { ps: 3, pe: 4, _type: TokenType::Literal(3) },
-		Token { ps: 4, pe: 5, _type: TokenType::CP },
-	];
-	let mut input_iterator = sample_input.iter().peekable();
-	while input_iterator.peek().is_some() {
-		match Root::parse(&mut input_iterator) {
-			Ok(r) => println!("{:?}", r),
-			Err(e) => {
-				println!("{:?}", e);
-				break;
-			}
-		}
-	}
+    let sample_input = vec![
+        Token { ps: 1, pe: 2, t: TokType::Literal(1) },
+        Token { ps: 0, pe: 1, t: TokType::Plus },
+        Token { ps: 0, pe: 1, t: TokType::OP },
+        Token { ps: 1, pe: 2, t: TokType::Literal(1) },
+        Token { ps: 0, pe: 1, t: TokType::Plus },
+        Token { ps: 2, pe: 3, t: TokType::Other('b') },
+        Token { ps: 4, pe: 5, t: TokType::CP }
+    ];
+    let mut input_iterator = sample_input.iter().peekable();
+    match Root::parse(&mut input_iterator) {
+        Ok(r) => println!("{:?}", r),
+        Err(e) => println!("Error: {:?}", e)
+    }
+    if input_iterator.peek().is_some() {
+        println!("Unused tokens:");
+        for i in input_iterator {
+            println!("- {:?}", i)
+        }
+    }
 }

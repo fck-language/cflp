@@ -1,140 +1,241 @@
-//! A simple introduction
+//! A simple example
 //!
-//! This example gives you a simple overview of how to use the `rule!` macro
+//! This example gives some really simple parsing examples with simple token inputs.
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum TokenType {
-	OP, CP,
-	Literal(u8),
+mod prelude {
+    //! General things we need as inputs
+    #[derive(Debug, Clone, PartialEq)]
+    pub enum Token {
+        Digit(usize),
+        Ident(String),
+        Comma, SemiColon, Dot,
+        Default
+    }
+    
+    impl Default for Token {
+        fn default() -> Self {
+            Self::Default
+        }
+    }
+    
+    impl PartialEq<Token> for &Token {
+        fn eq(&self, other: &Token) -> bool {
+            self == other
+        }
+    }
 }
 
-#[derive(Debug)]
-pub struct Token {
-	pub ps: usize,
-	pub pe: usize,
-	pub _type: TokenType,
+mod nodes {
+    //! This module contains the structs and enums we'll be deriving the [`Parser`] trait for.
+    //!
+    //! The expended impls are in the [`expanded`](crate::expanded) module
+    use cflp::Parser;
+    use crate::Token;
+    
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, Token; ([@Value])+, [@Sep], ([@Value])*, (@Sep)?)]
+    pub struct Base {
+        first: Vec<Value>,
+        sep: Sep,
+        last: Vec<Value>
+    }
+    
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, Token)]
+    pub enum Value {
+        #[parser([Token::Digit(t)])]
+        Int(usize),
+        #[parser([Token::Ident(t)])]
+        Ident(String)
+    }
+    
+    #[derive(Debug, Clone, Parser)]
+    #[parser(Token, Token)]
+    pub enum Sep {
+        #[parser([Token::Comma])]
+        Comma(Token),
+        #[parser(Token::SemiColon)]
+        SemiColon,
+        #[parser(Token::Dot, Token::Dot)]
+        Dot
+    }
 }
 
-impl PartialEq<TokenType> for &Token {
-	fn eq(&self, other: &TokenType) -> bool {
-		&self._type == other
-	}
+#[ignore]
+mod expanded {
+    #![allow(dead_code, unused)]
+    use cflp::Parser;
+    use crate::Token;
+    
+    #[derive(Debug, Clone)]
+    pub struct Base {
+        first: Vec<Value>,
+        sep: Sep,
+        last: Vec<Value>
+    }
+    
+    impl<'a> cflp::Parser<&'a Token, Token, Self> for Base {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+            let first = {
+                let first_0 = {
+                    let first_0_0 = {
+                        match Value::parse(src) {
+                            Ok(t) => t,
+                            Err(e) => return Err(e),
+                        }
+                    };
+                    first_0_0
+                };
+                let mut first_out = vec![first_0];
+                loop {
+                    let src_old = src.clone();
+                    match 'l0: {
+                        let first_0_0 = {
+                            match Value::parse(src) {
+                                Ok(t) => t,
+                                Err(e) => break 'l0 Err(e),
+                            }
+                        };
+                        Ok(first_0_0)
+                    } {
+                        Ok(t) => first_out.push(t),
+                        Err(_) => {
+                            *src = src_old;
+                            break;
+                        }
+                    }
+                }
+                first_out
+            };
+            let sep = {
+                match Sep::parse(src) {
+                    Ok(t) => t,
+                    Err(e) => return Err(e),
+                }
+            };
+            let last = {
+                let mut last_out = Vec::new();
+                loop {
+                    let src_old = src.clone();
+                    match 'l0: {
+                        let last_0_0 = {
+                            match Value::parse(src) {
+                                Ok(t) => t,
+                                Err(e) => break 'l0 Err(e),
+                            }
+                        };
+                        Ok(last_0_0)
+                    } {
+                        Ok(t) => last_out.push(t),
+                        Err(_) => {
+                            *src = src_old;
+                            break;
+                        }
+                    }
+                }
+                last_out
+            };
+            let src_old = src.clone();
+            if 'l0: {
+                if let Err(e) = Sep::parse(src) {
+                    break 'l0 Err(e);
+                }
+                Ok(())
+            }
+            .is_err()
+            {
+                *src = src_old;
+            }
+            return Ok(Self { first, sep, last });
+        }
+    }
+    
+    #[derive(Debug, Clone)]
+    pub enum Value {
+        Int(usize),
+        Ident(String)
+    }
+    
+    impl<'a> cflp::Parser<&'a Token, Token, Self> for Value {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+            match src.next() {
+                Some(t_unwrapped) => match t_unwrapped {
+                    Token::Digit(t) => Ok(Value::Int(t.clone())),
+                    Token::Ident(t) => Ok(Value::Ident(t.clone())),
+                    t => Err(cflp::Error { expected: Token::Digit(Default::default()), found: Some(t) }),
+                },
+                _ => Err(cflp::Error { expected: Token::Digit(Default::default()), found: None }),
+            }
+        }
+    }
+    
+    #[derive(Debug, Clone)]
+    pub enum Sep {
+        Comma,
+        SemiColon,
+        Dot
+    }
+    
+    impl<'a> cflp::Parser<&'a Token, Token, Self> for Sep {
+        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+            let first_err;
+            let src_old = src.clone();
+            match match src.next() {
+                Some(t_unwrapped) => match t_unwrapped {
+                    next_match @ Token::Comma => Ok(Sep::Comma),
+                    next_match @ Token::SemiColon => Ok(Sep::SemiColon),
+                    t => Err(cflp::Error { expected: Default::default(), found: Some(t) }),
+                },
+                _ => Err(cflp::Error { expected: Default::default(), found: None }),
+            } {
+                Ok(t) => return Ok(t),
+                Err(e) => {
+                    first_err = e;
+                    *src = src_old;
+                }
+            }
+            let src_old = src.clone();
+            match 'l0: {
+                let next = src.next();
+                if next != Some(&Token::Dot) {
+                    break 'l0 Err(cflp::Error { expected: Token::Dot, found: next });
+                }
+                let next = src.next();
+                if next != Some(&Token::Dot) {
+                    break 'l0 Err(cflp::Error { expected: Token::Dot, found: next });
+                }
+                break 'l0 Ok(Sep::Dot);
+            } {
+                Ok(t) => return Ok(t),
+                Err(_) => *src = src_old,
+            }
+            return Err(first_err);
+        }
+    }
 }
 
-use cflp::rule;
-// Generate types and Parser impls
-rule!(
-	(pub(crate), Token, TokenType, |t| t._type.clone(), (Debug, Clone))
-	// Root(Option<Inner>)
-	(Root; TokenType::OP, ([@Inner])?, TokenType::CP)
-	// Inner(Vec<u8>)
-	(Inner; ([TokenType::Literal; u8])*)
-);
-
-#[allow(unused_parens, unused_imports)]
-mod equivalent {
-	use super::{Token, TokenType};
-	use cflp::rule;
-	use cflp::Parser;
-	
-	#[derive(Debug, Clone)]
-	pub(crate) struct Root(Option<(Inner)>);
-	
-	impl<'a> Parser<&'a Token, TokenType> for Root {
-		fn parse<T: Iterator<Item=&'a Token> + Clone>(
-			src: &mut T,
-		) -> Result<Self, cflp::Error<&'a Token, TokenType>> {
-			let next = src.next();
-			if next.clone().map(|t| t._type.clone()) != Some(TokenType::OP) {
-				return Err(cflp::Error {
-					expected: TokenType::OP,
-					found: next,
-				});
-			}
-			let v_1 = {
-				let src_old = src.clone();
-				match 'l0: {
-					let v_1_0_0 = {
-						match Inner::parse(src) {
-							Ok(t) => t,
-							Err(e) => break 'l0 Err(e),
-						}
-					};
-					Ok(v_1_0_0)
-				} {
-					Ok(t) => Some(t),
-					Err(_) => {
-						*src = src_old;
-						None
-					}
-				}
-			};
-			let next = src.next();
-			if next.clone().map(|t| t._type.clone()) != Some(TokenType::CP) {
-				return Err(cflp::Error {
-					expected: TokenType::CP,
-					found: next,
-				});
-			}
-			return Ok(Self(v_1));
-		}
-	}
-	
-	#[derive(Debug, Clone)]
-	pub(crate) struct Inner(Vec<((u8))>);
-	
-	impl<'a> Parser<&'a Token, TokenType> for Inner {
-		fn parse<T: Iterator<Item=&'a Token> + Clone>(
-			src: &mut T,
-		) -> Result<Self, cflp::Error<&'a Token, TokenType>> {
-			let v_0 = {
-				let mut v_0_out = Vec::new();
-				loop {
-					let src_old = src.clone();
-					match 'l0: {
-						let v_0_0_0 = {
-							let next = src.next();
-							if let Some(TokenType::Literal(n_0)) = next.map(|t| t._type.clone()) {
-								((n_0))
-							} else {
-								break 'l0 Err(cflp::Error {
-									expected: TokenType::Literal(Default::default()),
-									found: next,
-								});
-							}
-						};
-						Ok(v_0_0_0)
-					} {
-						Ok(t) => v_0_out.push(t),
-						Err(_) => {
-							*src = src_old;
-							break;
-						}
-					}
-				}
-				v_0_out
-			};
-			return Ok(Self(v_0));
-		}
-	}
-}
+use nodes::*;
+use prelude::*;
+use cflp::Parser;
 
 fn main() {
-	let sample_input = vec![
-		Token { ps: 0, pe: 1, _type: TokenType::OP },
-		Token { ps: 1, pe: 2, _type: TokenType::Literal(1) },
-		Token { ps: 2, pe: 3, _type: TokenType::Literal(2) },
-		Token { ps: 3, pe: 4, _type: TokenType::Literal(3) },
-		Token { ps: 4, pe: 5, _type: TokenType::CP },
-	];
-	let mut input_iterator = sample_input.iter().peekable();
-	while input_iterator.peek().is_some() {
-		match Root::parse(&mut input_iterator) {
-			Ok(r) => println!("{:?}", r),
-			Err(e) => {
-				println!("{:?}", e);
-				break;
-			}
-		}
-	}
+    use crate::Token::*;
+    let sample_input = vec![
+        Digit(0), Ident("hello".to_string()),
+        SemiColon,
+        Ident("world".to_string()), Ident("!".to_string()), Digit(48879),
+    ];
+    let mut input_iterator = sample_input.iter().peekable();
+    match Base::parse(&mut input_iterator) {
+        Ok(r) => println!("{:?}", r),
+        Err(e) => println!("Error: {:?}", e)
+    }
+    if input_iterator.peek().is_some() {
+        println!("Unused tokens:");
+        for i in input_iterator {
+            println!("- {:?}", i)
+        }
+    } else {
+        println!("Tokens were fully consumed")
+    }
 }

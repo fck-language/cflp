@@ -27,6 +27,7 @@ jobs:
         # Delete the ref to avoid keeping history.
         git update-ref -d refs/heads/gh-pages
         rm -rf *
+        # Copy the book into root
         mv ../book/* .
         mkdir bench
         cp -r ../../target/criterion/* ./bench

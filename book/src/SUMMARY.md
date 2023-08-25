@@ -1,8 +1,14 @@
 # Summary
 
+[Intro](./README.md)
+
+---
+
 - [Getting started](./0.start.md)
-- [Simple rules](./1.simple.md)
-- [Calling other rules](./2.calls.md)
-- [Saving matched values](./3.saves.md)
-- [Or values](./4.or.md)
-- [No type generation](./5.no_type_macro.md)
+- [Non-macro library overview](./1.non-macro-lib.md)
+- [Simple derive macro](2.derive.md)
+- [Node data (complex version)](3.node-data.md)
+
+---
+
+[Benchmarks](./4.benchmarks.md)
