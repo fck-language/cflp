@@ -29,7 +29,10 @@ pub struct Error<F, E> {
 
 impl<F: Debug, E: Debug> Debug for Error<F, E> {
 	fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-		write!(f, "cflp::Error {{ found: {:?}, expected: {:?} }}", self.found, self.expected)
+		f.debug_struct("cflp::Error")
+			.field("found", &self.found)
+			.field("expected", &self.expected)
+			.finish()
 	}
 }
 
@@ -42,10 +45,17 @@ impl<F: Debug, E: Debug> Debug for Error<F, E> {
 /// * `I` - Type in input iterator. Token with class and other data
 /// * `C` - Type to compare to. Token class
 /// * `R` - Ok returned type. This will either be `Self` or [`NodeWrapper<Self, D>`]
-pub trait Parser<I: PartialEq<C>, C: PartialEq<C>, R = Self> {
+pub trait Parser<I, C: PartialEq<C>, R = Self> {
 	/// Parse an AST from a given input. Returns `Ok(Self)` (optionally wrapped) if the AST is
 	/// found and `Err(cflp::Error<I, C>)` if the AST was not found
-	fn parse<T: Iterator<Item=I> + Clone>(src: &mut T) -> Result<R, Error<I, C>> where Self: Sized;
+	fn parse<T: Iterator<Item=I> + Clone>(src: &mut T) -> Result<R, Error<I, C>> where Self: Sized {
+		<Self as Parser<I, C, R>>::parse_with_recursion(src, true)
+	}
+	
+	/// *THIS SHOULD NOT BE CALLED. USE [`parse`](Parser::parse) INSTEAD*
+	///
+	/// Performs [`parse`](Parser::parse) with restrictions on zero-consumption branching.
+	fn parse_with_recursion<T: Iterator<Item=I> + Clone>(src: &mut T, recurse: bool) -> Result<R, Error<I, C>> where Self: Sized;
 }
 
 /// # Node wrapper

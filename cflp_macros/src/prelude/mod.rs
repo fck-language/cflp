@@ -1,6 +1,6 @@
 //! This module contains all the types used throughout the codebase
 
-use syn::{ExprClosure, Path, Type, Ident, Expr, Pat, PathSegment};
+use syn::{Path, Type, Ident, Expr, Pat, PathSegment};
 
 mod impls;
 mod parser;
@@ -37,7 +37,7 @@ pub struct Meta {
 	/// Comparison token type
 	pub cmp_type: Type,
 	/// Token to token data map
-	pub map_fn: Option<ExprClosure>,
+	pub map: bool,
 	/// If the result is wrapped, contains a `Some` of the type with the wrapped data, otherwise
 	/// is `None`.
 	///
@@ -143,7 +143,7 @@ pub enum SaveType {
 	/// Anything that's not a call to another rule is interpreted as a [pattern](syn::Pat). This
 	/// will normally either be a [literal](syn::Pat::Ident), or a [named type](syn::Pat::Struct)
 	/// such as `Foo { a, .. }` or an [un-named type](syn::Pat::TupleStruct) such as `Bar(_, b)`
-	Other{ pattern: Pat, explode: bool },
+	Other { pattern: Pat, explode: bool },
 }
 
 /// Lifetime enum. Used to determine where errors should return to and if a successful result should
@@ -161,7 +161,7 @@ pub enum ReturnType {
 /// When deriving an impl for a type that's wrapped in a `NodeWrapper`, we need the first and last
 /// matched input token to save data into the `NodeWrapper`s `first` and `last` fields. This enum
 /// describes what type of match is currently being done.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum PositionType {
 	/// First matched token
 	Start,

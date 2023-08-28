@@ -45,3 +45,9 @@ impl Default for Punc {
         Self::Any
     }
 }
+
+impl<'a> Into<TokenType<'a>> for &Token<'a> {
+    fn into(self) -> TokenType<'a> {
+        self.t
+    }
+}

@@ -5,7 +5,7 @@
 use proc_macro2::{Ident, Span};
 use quote::ToTokens;
 use syn::parse::{Parse, ParseStream};
-use syn::{bracketed, parenthesized, PathSegment, Token, Type};
+use syn::{bracketed, parenthesized, Pat, PathSegment, Token, Type};
 use syn::punctuated::Punctuated;
 use crate::prelude::{Meta, Value, Group, StructParserAttribute, SaveType, SplitRule};
 
@@ -14,18 +14,13 @@ impl Parse for Meta {
 		let tok_type: Type = input.parse()?;
 		input.parse::<Token![,]>()?;
 		let cmp_type: Type = input.parse()?;
+		let map = tok_type.to_token_stream().to_string() != cmp_type.to_token_stream().to_string();
 		
-		let map_fn = if tok_type.to_token_stream().to_string() != cmp_type.to_token_stream().to_string() {
-			input.parse::<Token![,]>()?;
-			Some(input.parse()?)
-		} else {
-			None
-		};
 		let wrapped = if input.peek(Token![,]) {
 			input.parse::<Token![,]>()?;
 			Some(input.parse()?)
 		} else { None };
-		Ok(Self { tok_type, cmp_type, map_fn, wrapped, _self: PathSegment::from(Ident::new("Self", Span::mixed_site())) })
+		Ok(Self { tok_type, cmp_type, map, wrapped, _self: PathSegment::from(Ident::new("Self", Span::mixed_site())) })
 	}
 }
 
@@ -118,7 +113,7 @@ impl Parse for SaveType {
 				input.parse::<Token![*]>()?;
 				true
 			} else { false };
-			Ok(Self::Other { pattern: syn::Pat::parse_single(input)?, explode })
+			Ok(Self::Other { pattern: Pat::parse_multi(input)?, explode })
 		}
 	}
 }

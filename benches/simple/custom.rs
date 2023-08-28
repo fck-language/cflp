@@ -11,8 +11,8 @@ pub enum Expr {
 }
 
 impl<'a> Parser<&'a Token, TokenType> for Root {
-    fn parse<T: Iterator<Item = &'a Token> + Clone>(
-        src: &mut T,
+    fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
+        src: &mut T, recurse: bool
     ) -> Result<Self, Error<&'a Token, TokenType>>
     where
         Self: Sized,
@@ -37,8 +37,8 @@ impl<'a> Parser<&'a Token, TokenType> for Root {
 }
 
 impl<'a> Parser<&'a Token, TokenType> for Expr {
-    fn parse<T: Iterator<Item = &'a Token> + Clone>(
-        src: &mut T,
+    fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
+        src: &mut T, recurse: bool
     ) -> Result<Self, Error<&'a Token, TokenType>>
     where
         Self: Sized,

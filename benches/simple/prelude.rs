@@ -17,3 +17,9 @@ impl PartialEq<TokenType> for &Token {
         &self.t == other
     }
 }
+
+impl Into<TokenType> for &Token {
+    fn into(self) -> TokenType {
+        self.t
+    }
+}

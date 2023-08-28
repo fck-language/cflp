@@ -2,11 +2,11 @@ use crate::complex::prelude::*;
 use cflp::Parser;
 
 #[derive(Debug, Clone, Parser)]
-#[parser(Token<'a>, TokenType<'a>, |t| t.t; ([@Statement<'a>])*)]
+#[parser(Token<'a>, TokenType<'a>; ([@Statement<'a>])*)]
 pub struct Root<'a>(Vec<Statement<'a>>);
 
 #[derive(Debug, Clone, Parser)]
-#[parser(Token<'a>, TokenType<'a>, |t: &Token<'_>| t.t)]
+#[parser(Token<'a>, TokenType<'a>)]
 pub enum Statement<'a> {
     #[parser(TokenType::Kwd(Kwd::If), TokenType::OP, [@Expr<'a>], TokenType::CP, TokenType::OB, ([@Statement<'a>])*, TokenType::CB)]
     Var1(Expr<'a>, Vec<Statement<'a>>),
@@ -17,7 +17,7 @@ pub enum Statement<'a> {
 }
 
 #[derive(Debug, Clone, Parser)]
-#[parser(Token<'a>, TokenType<'a>, |t: &Token<'a>| t.t)]
+#[parser(Token<'a>, TokenType<'a>)]
 pub enum Expr<'a> {
     #[parser([TokenType::Ident(t)])]
     Var1(&'a str),
