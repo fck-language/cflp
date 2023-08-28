@@ -2,11 +2,11 @@ use crate::simple::prelude::*;
 use cflp::Parser;
 
 #[derive(Debug, Clone, Parser)]
-#[parser(Token, TokenType, |t| t.t; TokenType::OP, [@Expr], TokenType::CP)]
+#[parser(Token, TokenType; TokenType::OP, [@Expr], TokenType::CP)]
 pub struct Root(Expr);
 
 #[derive(Debug, Clone, Parser)]
-#[parser(Token, TokenType, |t: &Token| t.t)]
+#[parser(Token, TokenType)]
 pub enum Expr {
     #[parser([TokenType::Value(t)])]
     Var1(u8),

@@ -1,4 +1,4 @@
-//! A more momplex example
+//! A more complex example
 //!
 //! This example demonstrates the use of [`NodeData`] and [`NodeWrapper`] to preserve positional
 //! data when parsing. It also requires the use of boxed matches.
@@ -31,6 +31,12 @@ mod prelude {
         fn start(&self) -> usize { self.ps }
         fn end(&self) -> usize { self.pe }
     }
+    
+    impl Into<TokType> for &Token {
+        fn into(self) -> TokType {
+            self.t
+        }
+    }
 }
 
 mod nodes {
@@ -44,14 +50,14 @@ mod nodes {
     ///
     /// Matches as many [`Add`] repetitions as possible
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, TokType, |t| t.t, usize; ([@Add])*)]
+    #[parser(Token, TokType, usize; ([@Add])*)]
     pub struct Root(pub Vec<NodeWrapper<Add, usize>>);
     
     /// # Add struct
     ///
     /// Matches one [expression](Expr) plus another [expression](Expr)
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, TokType, |t| t.t, usize; [[@Expr]], TokType::Plus, [[@Expr]])]
+    #[parser(Token, TokType, usize; [[@Expr]], TokType::Plus, [[@Expr]])]
     pub struct Add {
         pub left: NodeWrapper<Box<Expr>, usize>,
         pub right: NodeWrapper<Box<Expr>, usize>
@@ -62,7 +68,7 @@ mod nodes {
     /// This matches either an [add expression](Add) in parentheses, a digits (`u8`), or a
     /// character (`char`)
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, TokType, |t: &Token| t.t, usize)]
+    #[parser(Token, TokType, usize)]
     pub enum Expr {
         #[parser(TokType::OP, [@Add], TokType::CP)]
         Paren { inner: NodeWrapper<Add, usize> },
@@ -86,8 +92,9 @@ mod expanded {
     pub struct Root(pub Vec<NodeWrapper<Add, usize>>);
     
     impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Root, usize>> for Root {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
             src: &mut T,
+            recurse: bool,
         ) -> Result<cflp::NodeWrapper<Root, usize>, cflp::Error<&'a Token, TokType>> {
             use cflp::NodeData;
             let mut start = Default::default();
@@ -97,7 +104,7 @@ mod expanded {
                 let src_old = src.clone();
                 match 'l0: {
                     let v_0_out_0 = {
-                        match Add::parse(src) {
+                        match Add::parse_with_recursion(src, false) {
                             Ok(t) => {
                                 start = t.start();
                                 end = t.end();
@@ -121,7 +128,7 @@ mod expanded {
                         let end_old = end;
                         match 'l0: {
                             let v_0_out_0 = {
-                                match Add::parse(src) {
+                                match Add::parse_with_recursion(src, false) {
                                     Ok(t) => {
                                         end = t.end();
                                         t
@@ -157,41 +164,34 @@ mod expanded {
     }
     
     impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Add, usize>> for Add {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
             src: &mut T,
+            recurse: bool,
         ) -> Result<cflp::NodeWrapper<Add, usize>, cflp::Error<&'a Token, TokType>> {
             use cflp::NodeData;
             let mut start = Default::default();
             let mut end = Default::default();
             let left = {
-                match Expr::parse(src) {
+                match Expr::parse_with_recursion(src, false) {
                     Ok(t) => {
                         start = t.start();
-                        NodeWrapper {
-                            node: Box::new(t.node),
-                            start: t.start,
-                            end: t.end,
-                        }
+                        Box::new(t)
                     }
                     Err(e) => return Err(e),
                 }
             };
             let next = src.next();
-            if next.clone().map(|t| t.t) != Some(TokType::Plus) {
+            if next.clone().map(Into::<TokType>::into) != Some(TokType::Plus) {
                 return Err(cflp::Error {
                     expected: TokType::Plus,
                     found: next,
                 });
             }
             let right = {
-                match Expr::parse(src) {
+                match Expr::parse_with_recursion(src, false) {
                     Ok(t) => {
                         end = t.end();
-                        NodeWrapper {
-                            node: Box::new(t.node),
-                            start: t.start,
-                            end: t.end,
-                        }
+                        Box::new(t)
                     }
                     Err(e) => return Err(e),
                 }
@@ -212,8 +212,9 @@ mod expanded {
     }
     
     impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Expr, usize>> for Expr {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
             src: &mut T,
+            recurse: bool,
         ) -> Result<cflp::NodeWrapper<Expr, usize>, cflp::Error<&'a Token, TokType>> {
             use cflp::NodeData;
             let mut start = <usize as Default>::default();
@@ -222,9 +223,9 @@ mod expanded {
             let src_old = src.clone();
             match match src.next() {
                 Some(t_unwrapped) => {
-                    let start = <Token as NodeData<usize>>::start(t_unwrapped);
-                    let end = <Token as NodeData<usize>>::end(t_unwrapped);
-                    match (|t: &Token| t.t)(t_unwrapped) {
+                    let start = <Token as cflp::NodeData<usize>>::start(t_unwrapped);
+                    let end = <Token as cflp::NodeData<usize>>::end(t_unwrapped);
+                    match Into::<TokType>::into(t_unwrapped) {
                         TokType::Literal(t) => {
                             Ok(cflp::NodeWrapper {
                                 start,
@@ -264,7 +265,7 @@ mod expanded {
             match 'l0: {
                 let next = src.next();
                 if let Some(__next) = next {
-                    if (|t: &Token| t.t)(__next) != TokType::OP {
+                    if Into::<TokType>::into(__next) != TokType::OP {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::OP,
                             found: next,
@@ -278,14 +279,14 @@ mod expanded {
                     })
                 };
                 let inner = {
-                    match Add::parse(src) {
+                    match <Add as cflp::Parser<_, _, _>>::parse(src) {
                         Ok(t) => t,
                         Err(e) => break 'l0 Err(e),
                     }
                 };
                 let next = src.next();
                 if let Some(__next) = next {
-                    if (|t: &Token| t.t)(__next) != TokType::CP {
+                    if Into::<TokType>::into(__next) != TokType::CP {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::CP,
                             found: next,
@@ -300,7 +301,13 @@ mod expanded {
                 };
                 break 'l0 Ok(Expr::Paren { inner });
             } {
-                Ok(t) => return Ok(NodeWrapper { node: t, start, end }),
+                Ok(t) => {
+                    return Ok(cflp::NodeWrapper {
+                        node: t,
+                        start,
+                        end,
+                    });
+                }
                 Err(_) => *src = src_old,
             }
             return Err(first_err);

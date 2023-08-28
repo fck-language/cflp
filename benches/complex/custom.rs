@@ -5,8 +5,8 @@ use cflp::{Error, Parser};
 pub struct Root<'a>(Vec<Statement<'a>>);
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Root<'a> {
-    fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
-        src: &mut T,
+    fn parse_with_recursion<T: Iterator<Item = &'a Token<'a>> + Clone>(
+        src: &mut T, recurse: bool
     ) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
     where
         Self: Sized,
@@ -34,8 +34,8 @@ pub enum Statement<'a> {
 }
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Statement<'a> {
-    fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
-        src: &mut T,
+    fn parse_with_recursion<T: Iterator<Item = &'a Token<'a>> + Clone>(
+        src: &mut T, recurse: bool
     ) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
     where
         Self: Sized,
@@ -163,8 +163,8 @@ pub enum Expr<'a> {
 }
 
 impl<'a> Parser<&'a Token<'a>, TokenType<'a>> for Expr<'a> {
-    fn parse<T: Iterator<Item = &'a Token<'a>> + Clone>(
-        src: &mut T,
+    fn parse_with_recursion<T: Iterator<Item = &'a Token<'a>> + Clone>(
+        src: &mut T, recurse: bool
     ) -> Result<Self, Error<&'a Token<'a>, TokenType<'a>>>
     where
         Self: Sized,

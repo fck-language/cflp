@@ -89,9 +89,7 @@ impl RuleInner {
 							}
 						}
 					}
-					SplitRule::Other { .. } => {
-						unreachable!("I don't think this is reachable?")
-					}
+					SplitRule::Other { .. } => unreachable!("I don't think this is reachable?\n{}", std::backtrace::Backtrace::force_capture())
 				}
 			}
 			RuleInnerMatch::Unnamed(g) => {

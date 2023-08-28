@@ -71,27 +71,31 @@ mod expanded {
     pub struct Base {
         first: Vec<Value>,
         sep: Sep,
-        last: Vec<Value>
+        last: Vec<Value>,
     }
     
+    #[automatically_derived]
     impl<'a> cflp::Parser<&'a Token, Token, Self> for Base {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(src: &mut T, recurse: bool) -> Result<Self, cflp::Error<&'a Token, Token>> {
             let first = {
                 let first_0 = {
                     let first_0_0 = {
-                        match Value::parse(src) {
+                        match <Value as cflp::Parser<_, _, _>>::parse(src) {
                             Ok(t) => t,
                             Err(e) => return Err(e),
                         }
                     };
                     first_0_0
                 };
-                let mut first_out = vec![first_0];
+                let mut first_out = <[_]>::into_vec(
+                    #[rustc_box]
+                    ::alloc::boxed::Box::new([first_0]),
+                );
                 loop {
                     let src_old = src.clone();
                     match 'l0: {
                         let first_0_0 = {
-                            match Value::parse(src) {
+                            match <Value as cflp::Parser<_, _, _>>::parse(src) {
                                 Ok(t) => t,
                                 Err(e) => break 'l0 Err(e),
                             }
@@ -108,7 +112,7 @@ mod expanded {
                 first_out
             };
             let sep = {
-                match Sep::parse(src) {
+                match <Sep as cflp::Parser<_, _, _>>::parse(src) {
                     Ok(t) => t,
                     Err(e) => return Err(e),
                 }
@@ -119,7 +123,7 @@ mod expanded {
                     let src_old = src.clone();
                     match 'l0: {
                         let last_0_0 = {
-                            match Value::parse(src) {
+                            match <Value as cflp::Parser<_, _, _>>::parse(src) {
                                 Ok(t) => t,
                                 Err(e) => break 'l0 Err(e),
                             }
@@ -137,7 +141,7 @@ mod expanded {
             };
             let src_old = src.clone();
             if 'l0: {
-                if let Err(e) = Sep::parse(src) {
+                if let Err(e) = <Sep as cflp::Parser<_, _, _>>::parse(src) {
                     break 'l0 Err(e);
                 }
                 Ok(())
@@ -153,16 +157,17 @@ mod expanded {
     #[derive(Debug, Clone)]
     pub enum Value {
         Int(usize),
-        Ident(String)
+        Ident(String),
     }
     
+    #[automatically_derived]
     impl<'a> cflp::Parser<&'a Token, Token, Self> for Value {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(src: &mut T, recurse: bool) -> Result<Self, cflp::Error<&'a Token, Token>> {
             match src.next() {
                 Some(t_unwrapped) => match t_unwrapped {
                     Token::Digit(t) => Ok(Value::Int(t.clone())),
                     Token::Ident(t) => Ok(Value::Ident(t.clone())),
-                    t => Err(cflp::Error { expected: Token::Digit(Default::default()), found: Some(t) }),
+                    _ => Err(cflp::Error { expected: Token::Digit(Default::default()), found: Some(t_unwrapped) }),
                 },
                 _ => Err(cflp::Error { expected: Token::Digit(Default::default()), found: None }),
             }
@@ -171,22 +176,23 @@ mod expanded {
     
     #[derive(Debug, Clone)]
     pub enum Sep {
-        Comma,
+        Comma(Token),
         SemiColon,
-        Dot
+        Dot,
     }
     
+    #[automatically_derived]
     impl<'a> cflp::Parser<&'a Token, Token, Self> for Sep {
-        fn parse<T: Iterator<Item = &'a Token> + Clone>(src: &mut T) -> Result<Self, cflp::Error<&'a Token, Token>> {
+        fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(src: &mut T, recurse: bool) -> Result<Self, cflp::Error<&'a Token, Token>> {
             let first_err;
             let src_old = src.clone();
             match match src.next() {
                 Some(t_unwrapped) => match t_unwrapped {
-                    next_match @ Token::Comma => Ok(Sep::Comma),
-                    next_match @ Token::SemiColon => Ok(Sep::SemiColon),
-                    t => Err(cflp::Error { expected: Default::default(), found: Some(t) }),
+                    __next_unwrapped @ Token::Comma => Ok(Sep::Comma(__next_unwrapped.clone())),
+                    Token::SemiColon => Ok(Sep::SemiColon),
+                    _ => Err(cflp::Error { expected: Token::Comma, found: Some(t_unwrapped) }),
                 },
-                _ => Err(cflp::Error { expected: Default::default(), found: None }),
+                _ => Err(cflp::Error { expected: Token::Comma, found: None }),
             } {
                 Ok(t) => return Ok(t),
                 Err(e) => {

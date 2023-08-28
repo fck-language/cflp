@@ -13,10 +13,10 @@ mod build;
 mod lifetimes;
 
 use proc_macro::TokenStream as pmTS;
-use proc_macro2::{Span, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use std::collections::HashSet;
 use quote::{format_ident, quote, ToTokens};
-use syn::{parse, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, PathArguments, AngleBracketedGenericArguments, GenericParam, GenericArgument};
+use syn::{parse, ItemEnum, ItemStruct, Lifetime, Error, Token, Path, PathSegment, punctuated::Punctuated, spanned::Spanned, Fields, PathArguments, AngleBracketedGenericArguments, GenericParam, GenericArgument, Variant};
 use crate::{
 	lifetimes::Lifetimes,
 	prelude::{Meta, StructParserAttribute, MacroInner, RuleInner, Rules, ReturnType}
@@ -166,8 +166,9 @@ fn get_rules(item: pmTS) -> Result<MacroInner, Error> {
 					),
 					_ => RuleInnerMatch::Unnamed(inner)
 				};
-				if inner.count_matches() != variant.fields.len() {
-					return Err(Error::new(variant.span(), "Variant number of save groups does not match the number of fields of the variant"))
+				let inner_matches = inner.count_matches();
+				if inner_matches != variant.fields.len() {
+					return Err(Error::new(variant.span(), format!("Variant number of save groups ({}) does not match the number of fields of the variant ({})", inner_matches, variant.fields.len())))
 				}
 				rules.push(RuleInner { name, inner });
 			} else {
@@ -204,7 +205,7 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 	} else { meta._self.to_token_stream() };
 	let inner_match_stream = match r {
 		Rules::Single(inner) => {
-			let (rule_inner, return_args) = inner.build(ReturnType::Function, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+			let (rule_inner, return_args) = inner.build(ReturnType::Function, &meta.cmp_type, meta.map, meta.wrapped.is_some());
 			if meta.wrapped.is_some() {
 				quote!{
 					use cflp::NodeData;
@@ -238,10 +239,11 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 				}
 				let pre = if let Some(pos_type) = &meta.wrapped {
 					let tok_type = &meta.tok_type;
-					quote!{ let start = <#tok_type as NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as NodeData<#pos_type>>::end(t_unwrapped); }
+					quote!{ let start = <#tok_type as cflp::NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as cflp::NodeData<#pos_type>>::end(t_unwrapped); }
 				} else { quote!{} };
-				let inner_match_expr = if let Some(map_fn) = &meta.map_fn {
-					quote!{ (#map_fn)(t_unwrapped) }
+				let inner_match_expr = if meta.map {
+					let cmp_type = &meta.cmp_type;
+					quote!{ Into::<#cmp_type>::into(t_unwrapped) }
 				} else { quote!{ t_unwrapped } };
 				quote!{
 					match src.next() {
@@ -276,10 +278,11 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 					}
 					let pre_match = if let Some(pos_type) = &meta.wrapped {
 						let tok_type = &meta.tok_type;
-						quote!{ let start = <#tok_type as NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as NodeData<#pos_type>>::end(t_unwrapped); }
+						quote!{ let start = <#tok_type as cflp::NodeData<#pos_type>>::start(t_unwrapped); let end = <#tok_type as cflp::NodeData<#pos_type>>::end(t_unwrapped); }
 					} else { quote!{} };
-					let inner_match_expr = if let Some(map_fn) = &meta.map_fn {
-						quote!{ (#map_fn)(t_unwrapped) }
+					let inner_match_expr = if meta.map {
+						let cmp_type = &meta.cmp_type;
+						quote!{ Into::<#cmp_type>::into(t_unwrapped) }
 					} else { quote!{ t_unwrapped } };
 					let ret = quote!{
 						match match src.next() {
@@ -316,7 +319,7 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 					rem = new_rem;
 					ret
 				} else {
-					let (mut rule_inner, return_args) = first.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+					let (mut rule_inner, return_args) = first.build(inner_return_rule, &meta.cmp_type, meta.map, meta.wrapped.is_some());
 					let name = &first.name;
 					rule_inner.extend(quote!{; break #lifetime Ok(#name #return_args)});
 					
@@ -338,7 +341,7 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 					#first_match
 				};
 				for rule in rem.iter() {
-					let (mut rule_inner, return_args) = rule.build(inner_return_rule, &meta.cmp_type, &meta.map_fn, meta.wrapped.is_some());
+					let (mut rule_inner, return_args) = rule.build(inner_return_rule, &meta.cmp_type, meta.map, meta.wrapped.is_some());
 					let name = &rule.name;
 					rule_inner.extend(quote!{
 						; break #lifetime Ok(#name #return_args)
@@ -362,7 +365,7 @@ fn build_impl(r: Rules, meta: Meta) -> TokenStream {
 	quote!{
 		#[automatically_derived]
 		impl <'a, #impl_lifetimes> cflp::Parser<&'a #tok_type, #cmp_type, #ret_type> for #_self {
-			fn parse<T: Iterator<Item=&'a #tok_type> + Clone>(src: &mut T) -> Result<#ret_type, cflp::Error<&'a #tok_type, #cmp_type>> {
+			fn parse_with_recursion<T: Iterator<Item=&'a #tok_type> + Clone>(src: &mut T, recurse: bool) -> Result<#ret_type, cflp::Error<&'a #tok_type, #cmp_type>> {
 				#inner_match_stream
 			}
 		}

@@ -1,6 +1,6 @@
 use proc_macro2::{Span, TokenStream};
 use quote::{format_ident, quote};
-use syn::{ExprClosure, Lifetime, Type};
+use syn::{Lifetime, Type};
 use crate::prelude::{Group, PositionType, ReturnType, RuleInner, RuleInnerMatch, SplitRule, Value};
 
 impl ReturnType {
@@ -55,7 +55,7 @@ impl ReturnType {
 
 impl RuleInner {
 	/// Impl generation entry point
-	pub fn build(&self, return_type: ReturnType, comp_type: &Type, map_fn: &Option<ExprClosure>, wrapped: bool) -> (TokenStream, TokenStream) {
+	pub fn build(&self, return_type: ReturnType, comp_type: &Type, map: bool, wrapped: bool) -> (TokenStream, TokenStream) {
 		let mut out = TokenStream::new();
 		let final_return;
 		match &self.inner {
@@ -68,22 +68,22 @@ impl RuleInner {
 							let n = names.next().unwrap();
 							if wrapped {
 								out.extend(g.build_save_start_end(
-									n.clone(), &self.name, return_type, comp_type, map_fn,
+									n.clone(), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::StartEnd
 								));
 							} else {
 								out.extend(g.build_save(
-									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped
 								));
 							}
 						} else {
 							if wrapped {
 								out.extend(g.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::StartEnd
+									return_type, comp_type, map, PositionType::StartEnd
 								));
 							} else {
 								out.extend(g.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -94,22 +94,22 @@ impl RuleInner {
 							let n = names.next().unwrap();
 							if wrapped {
 								out.extend(start.build_save_start_end(
-									n.clone(), &self.name, return_type, comp_type, map_fn,
+									n.clone(), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::Start
 								));
 							} else {
 								out.extend(start.build_save(
-									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped
 								));
 							}
 						} else {
 							if wrapped {
 								out.extend(start.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::Start
+									return_type, comp_type, map, PositionType::Start
 								));
 							} else {
 								out.extend(start.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -118,11 +118,11 @@ impl RuleInner {
 							if i.contains_save() {
 								let n = names.next().unwrap();
 								out.extend(i.build_save(
-									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped
 								));
 							} else {
 								out.extend(i.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 							out.extend(quote!{ ; });
@@ -131,22 +131,22 @@ impl RuleInner {
 							let n = names.next().unwrap();
 							if wrapped {
 								out.extend(end.build_save_start_end(
-									n.clone(), &self.name, return_type, comp_type, map_fn,
+									n.clone(), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::End
 								));
 							} else {
 								out.extend(end.build_save(
-									n.clone(), &self.name, return_type, comp_type, map_fn, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped
 								));
 							}
 						} else {
 							if wrapped {
 								out.extend(end.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::End
+									return_type, comp_type, map, PositionType::End
 								));
 							} else {
 								out.extend(end.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -167,23 +167,23 @@ impl RuleInner {
 						if g.contains_save() {
 							if wrapped {
 								out.extend(g.build_save_start_end(
-									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_0"), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::StartEnd
 								));
 							} else {
 								out.extend(g.build_save(
-									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_0"), &self.name, return_type, comp_type, map,
 									wrapped
 								));
 							}
 						} else {
 							if wrapped {
 								out.extend(g.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::StartEnd
+									return_type, comp_type, map, PositionType::StartEnd
 								));
 							} else {
 								out.extend(g.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -194,12 +194,12 @@ impl RuleInner {
 						if start.contains_save() {
 							if wrapped {
 								out.extend(start.build_save_start_end(
-									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_0"), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::Start
 								));
 							} else {
 								out.extend(start.build_save(
-									format_ident!("v_0"), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_0"), &self.name, return_type, comp_type, map,
 									wrapped
 								));
 							}
@@ -207,11 +207,11 @@ impl RuleInner {
 						} else {
 							if wrapped {
 								out.extend(start.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::Start
+									return_type, comp_type, map, PositionType::Start
 								));
 							} else {
 								out.extend(start.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -219,12 +219,12 @@ impl RuleInner {
 						for i in middle.iter() {
 							if i.contains_save() {
 								out.extend(i.build_save(
-									format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn, wrapped
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map, wrapped
 								));
 								k += 1;
 							} else {
 								out.extend(i.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 							out.extend(quote!{ ; });
@@ -232,23 +232,23 @@ impl RuleInner {
 						if end.contains_save() {
 							if wrapped {
 								out.extend(end.build_save_start_end(
-									format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map,
 									wrapped, PositionType::End
 								));
 							} else {
 								out.extend(end.build_save(
-									format_ident!("v_{}", k), &self.name, return_type, comp_type, map_fn,
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map,
 									wrapped
 								));
 							}
 						} else {
 							if wrapped {
 								out.extend(end.build_no_save_start_end(
-									return_type, comp_type, map_fn, PositionType::End
+									return_type, comp_type, map, PositionType::End
 								));
 							} else {
 								out.extend(end.build_no_save(
-									return_type, comp_type, map_fn
+									return_type, comp_type, map
 								));
 							}
 						}
@@ -317,9 +317,9 @@ impl Group {
 	pub fn count_matches(&self) -> usize {
 		match self {
 			Group::Literal(v, true) => v.count_matches(),
-			Group::Kleene(v, true) => v.count_matches(),
-			Group::Positive(v, true) => v.count_matches(),
-			Group::Option(v, true) => v.count_matches(),
+			Group::Kleene(v, true) => if v.count_matches() == 0 { 0 } else { 1 },
+			Group::Positive(v, true) => if v.count_matches() == 0 { 0 } else { 1 },
+			Group::Option(v, true) => if v.count_matches() == 0 { 0 } else { 1 },
 			_ => 0
 		}
 	}
