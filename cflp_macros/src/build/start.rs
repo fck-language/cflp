@@ -26,21 +26,21 @@ impl Value {
 							PositionType::Start => {
 								out.push(start.build_no_save_start_end(return_type, match_type, map, PositionType::Start));
 								for i in middle.iter() {
-									out.push(i.build_no_save(return_type, match_type, map));
+									out.push(i.build_no_save(return_type, match_type, map, false));
 								}
-								out.push(end.build_no_save(return_type, match_type, map))
+								out.push(end.build_no_save(return_type, match_type, map, false))
 							}
 							PositionType::End => {
-								out.push(start.build_no_save(return_type, match_type, map));
+								out.push(start.build_no_save(return_type, match_type, map, false));
 								for i in middle.iter() {
-									out.push(i.build_no_save(return_type, match_type, map));
+									out.push(i.build_no_save(return_type, match_type, map, false));
 								}
 								out.push(end.build_no_save_start_end(return_type, match_type, map, PositionType::End))
 							}
 							PositionType::StartEnd => {
 								out.push(start.build_no_save_start_end(return_type, match_type, map, PositionType::Start));
 								for i in middle.iter() {
-									out.push(i.build_no_save(return_type, match_type, map));
+									out.push(i.build_no_save(return_type, match_type, map, false));
 								}
 								out.push(end.build_no_save_start_end(return_type, match_type, map, PositionType::End))
 							}
@@ -76,31 +76,31 @@ impl Value {
 								}
 								for i in middle.iter() {
 									if i.contains_save() {
-										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped));
+										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
 										k += 1;
 									} else {
-										out.push(i.build_no_save(inner_return_type, match_type, map))
+										out.push(i.build_no_save(inner_return_type, match_type, map, false))
 									}
 								}
 								if end.contains_save() {
-									out.push(end.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped));
+									out.push(end.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
 								} else {
-									out.push(end.build_no_save(inner_return_type, match_type, map))
+									out.push(end.build_no_save(inner_return_type, match_type, map, false))
 								}
 							}
 							PositionType::End => {
 								if start.contains_save() {
-									out.push(start.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped));
+									out.push(start.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped, false));
 									k = 1;
 								} else {
-									out.push(start.build_no_save(inner_return_type, match_type, map))
+									out.push(start.build_no_save(inner_return_type, match_type, map, false))
 								}
 								for i in middle.iter() {
 									if i.contains_save() {
-										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped));
+										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
 										k += 1;
 									} else {
-										out.push(i.build_no_save(inner_return_type, match_type, map))
+										out.push(i.build_no_save(inner_return_type, match_type, map, false))
 									}
 								}
 								if end.contains_save() {
@@ -118,10 +118,10 @@ impl Value {
 								}
 								for i in middle.iter() {
 									if i.contains_save() {
-										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped));
+										out.push(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
 										k += 1;
 									} else {
-										out.push(i.build_no_save(inner_return_type, match_type, map))
+										out.push(i.build_no_save(inner_return_type, match_type, map, false))
 									}
 								}
 								if end.contains_save() {
@@ -278,7 +278,11 @@ fn build_value_save_call(e: &Path, caller: &Path, return_type: ReturnType, is_bo
 					expected: Default::default(),
 					found: None
 				})});
-	if (position == PositionType::Start || position == PositionType::StartEnd) && e.to_token_stream().to_string() == caller.segments.first().unwrap().to_token_stream().to_string() {
+	let is_init = position == PositionType::Start || position == PositionType::StartEnd;
+	let is_self_call = if is_init {
+		e.segments.first().unwrap().ident.to_string() == "Self" || e.segments.first().unwrap().ident.to_string() == caller.segments.first().unwrap().ident.to_string()
+	} else { false };
+	if is_self_call {
 		quote!{
 			if !recurse {
 				#ret_overflow
@@ -411,7 +415,7 @@ fn build_group_kleene_ns(e: &Value, return_type: ReturnType, match_type: &Type, 
 	let ret_lifetime = inner_return_type.get_lifetime();
 	let first = e.build_no_save_start_end(inner_return_type, match_type, map, PositionType::Start);
 	let last = e.build_no_save_start_end(inner_return_type, match_type, map, PositionType::End);
-	let inner = e.build_no_save(inner_return_type, match_type, map);
+	let inner = e.build_no_save(inner_return_type, match_type, map, false);
 	match position {
 		PositionType::Start => quote!{
 			let src_old = src.clone();
@@ -477,7 +481,7 @@ fn build_group_positive_ns(e: &Value, return_type: ReturnType, match_type: &Type
 	match position {
 		PositionType::Start => {
 			let first = e.build_no_save_start_end(inner_return_type, match_type, map, PositionType::Start);
-			let inner = e.build_no_save(inner_return_type, match_type, map);
+			let inner = e.build_no_save(inner_return_type, match_type, map, false);
 			quote!{
 				#first;
 				loop {
@@ -558,7 +562,7 @@ fn build_group_kleene(e: &Value, n: Ident, caller: &Path, return_type: ReturnTyp
 	match position {
 		PositionType::Start => {
 			let first = e.build_save_start_end(n.clone(), caller, inner_return_type, match_type, map, wrapped, PositionType::Start);
-			let inner = e.build_save(n.clone(), caller, inner_return_type, match_type, map, wrapped);
+			let inner = e.build_save(n.clone(), caller, inner_return_type, match_type, map, wrapped, false);
 			quote!{
 				let src_old = src.clone();
 				match #ret_lifetime: { #first } {
@@ -641,7 +645,7 @@ fn build_group_positive(e: &Value, n: Ident, caller: &Path, return_type: ReturnT
 	match position {
 		PositionType::Start => {
 			let first = e.build_save_start_end(n.clone(), caller, inner_return_type, match_type, map, wrapped, PositionType::Start);
-			let inner = e.build_save(n.clone(), caller, inner_return_type, match_type, map, wrapped);
+			let inner = e.build_save(n.clone(), caller, inner_return_type, match_type, map, wrapped, false);
 			quote!{
 				#n.push(#ret_lifetime: {#first}?);
 				loop {
