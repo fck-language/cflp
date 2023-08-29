@@ -42,7 +42,7 @@ impl ReturnType {
 	/// Builds a `TokenStream` to return the given `TokenStream`
 	pub fn to_token_stream(&self, inner: TokenStream) -> TokenStream {
 		match self {
-			ReturnType::Function => if inner.is_empty() { quote!{ return } } else { quote!{ return #inner } },
+			ReturnType::Function => quote!{ return #inner },
 			ReturnType::Lifetime(i, _) => {
 				let l = Lifetime::new(&*format!("'l{}", i), Span::mixed_site());
 				if inner.is_empty() {
@@ -73,7 +73,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(g.build_save(
-									n.clone(), &self.name, return_type, comp_type, map, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped, true
 								));
 							}
 						} else {
@@ -83,7 +83,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(g.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, true
 								));
 							}
 						}
@@ -99,7 +99,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(start.build_save(
-									n.clone(), &self.name, return_type, comp_type, map, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped, true
 								));
 							}
 						} else {
@@ -109,7 +109,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(start.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, true
 								));
 							}
 						}
@@ -118,11 +118,11 @@ impl RuleInner {
 							if i.contains_save() {
 								let n = names.next().unwrap();
 								out.extend(i.build_save(
-									n.clone(), &self.name, return_type, comp_type, map, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped, false
 								));
 							} else {
 								out.extend(i.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, false
 								));
 							}
 							out.extend(quote!{ ; });
@@ -136,7 +136,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(end.build_save(
-									n.clone(), &self.name, return_type, comp_type, map, wrapped
+									n.clone(), &self.name, return_type, comp_type, map, wrapped, false
 								));
 							}
 						} else {
@@ -146,7 +146,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(end.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, false
 								));
 							}
 						}
@@ -173,7 +173,7 @@ impl RuleInner {
 							} else {
 								out.extend(g.build_save(
 									format_ident!("v_0"), &self.name, return_type, comp_type, map,
-									wrapped
+									wrapped, true
 								));
 							}
 						} else {
@@ -183,7 +183,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(g.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, true
 								));
 							}
 						}
@@ -200,7 +200,7 @@ impl RuleInner {
 							} else {
 								out.extend(start.build_save(
 									format_ident!("v_0"), &self.name, return_type, comp_type, map,
-									wrapped
+									wrapped, true
 								));
 							}
 							k = 1;
@@ -211,7 +211,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(start.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, true
 								));
 							}
 						}
@@ -219,12 +219,12 @@ impl RuleInner {
 						for i in middle.iter() {
 							if i.contains_save() {
 								out.extend(i.build_save(
-									format_ident!("v_{}", k), &self.name, return_type, comp_type, map, wrapped
+									format_ident!("v_{}", k), &self.name, return_type, comp_type, map, wrapped, false
 								));
 								k += 1;
 							} else {
 								out.extend(i.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, false
 								));
 							}
 							out.extend(quote!{ ; });
@@ -238,7 +238,7 @@ impl RuleInner {
 							} else {
 								out.extend(end.build_save(
 									format_ident!("v_{}", k), &self.name, return_type, comp_type, map,
-									wrapped
+									wrapped, false
 								));
 							}
 						} else {
@@ -248,7 +248,7 @@ impl RuleInner {
 								));
 							} else {
 								out.extend(end.build_no_save(
-									return_type, comp_type, map
+									return_type, comp_type, map, false
 								));
 							}
 						}

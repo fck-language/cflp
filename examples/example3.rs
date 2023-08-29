@@ -12,6 +12,7 @@ mod prelude {
         OP,
         CP,
         Plus,
+        Minus,
         Literal(u8),
         Other(char),
     }
@@ -56,13 +57,18 @@ mod nodes {
     #[derive(Debug, Clone, Parser)]
     #[parser(Token, TokType, usize)]
     pub enum Expr {
-        #[parser(TokType::OP, [[@Expr]], TokType::CP)]
-        Bracketed(Box<NodeWrapper<Self, usize>>),
         #[parser([[@Expr]], (TokType::Plus, [@Expr])+)]
         Add {
             first: Box<NodeWrapper<Self, usize>>,
             rem: Vec<NodeWrapper<Self, usize>>
         },
+        #[parser([[@Expr]], (TokType::Minus, [@Expr])+)]
+        Minus {
+            first: Box<NodeWrapper<Self, usize>>,
+            rem: Vec<NodeWrapper<Self, usize>>
+        },
+        #[parser(TokType::OP, [[@Expr]], TokType::CP)]
+        Bracketed(Box<NodeWrapper<Self, usize>>),
         #[parser([@ExprLit])]
         Literal(NodeWrapper<ExprLit, usize>)
     }

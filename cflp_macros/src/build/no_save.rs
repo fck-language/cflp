@@ -10,18 +10,18 @@ use crate::prelude::{Value, Group, ReturnType, SplitRule};
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map: bool) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map: bool, is_first: bool) -> TokenStream {
 		match self {
 			Value::Single(t) => build_value_single(t, match_type, return_type, map),
 			Value::Call(n) => build_value_call(n, return_type),
 			Value::Save { .. } => unreachable!("Value::Save variant should be inaccessible under a no_save function\n{}", std::backtrace::Backtrace::force_capture()),
 			Value::Group(g, _) => {
 				match g {
-					SplitRule::Single(inner) => inner.build_no_save(return_type, match_type, map),
+					SplitRule::Single(inner) => inner.build_no_save(return_type, match_type, map, is_first),
 					SplitRule::Other { start, middle, end } => {
-						let start = start.build_no_save(return_type, match_type, map);
-						let middle = middle.iter().map(|i| i.build_no_save(return_type, match_type, map));
-						let end = end.build_no_save(return_type, match_type, map);
+						let start = start.build_no_save(return_type, match_type, map, is_first);
+						let middle = middle.iter().map(|i| i.build_no_save(return_type, match_type, map, false));
+						let end = end.build_no_save(return_type, match_type, map, false);
 						quote!{ #start; #(#middle;)* #end; }
 					}
 				}
@@ -32,19 +32,19 @@ impl Value {
 
 impl Group {
 	/// Builds a `Group` to a `TokenStream` without saving it
-	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map: bool) -> TokenStream {
+	pub(crate) fn build_no_save(&self, return_type: ReturnType, match_type: &Type, map: bool, is_first: bool) -> TokenStream {
 		match self {
 			Group::Literal(v, _) => {
-				v.build_no_save(return_type, match_type, map)
+				v.build_no_save(return_type, match_type, map, is_first)
 			},
-			Group::Kleene(v, _) => build_group_kleene(v, return_type, match_type, map),
+			Group::Kleene(v, _) => build_group_kleene(v, return_type, match_type, map, is_first),
 			Group::Positive(v, _) => {
 				// a+ == a a*
-				let mut out = v.clone().build_no_save(return_type, match_type, map);
-				out.extend(build_group_kleene(v, return_type, match_type, map));
+				let mut out = v.clone().build_no_save(return_type, match_type, map, is_first);
+				out.extend(build_group_kleene(v, return_type, match_type, map, false));
 				out
 			}
-			Group::Option(v, _) => build_group_option(v, return_type, match_type, map)
+			Group::Option(v, _) => build_group_option(v, return_type, match_type, map, is_first)
 		}
 	}
 }
@@ -83,10 +83,10 @@ fn build_value_call(e: &Ident, return_type: ReturnType) -> TokenStream {
 }
 
 /// Match as many repetitions of the group as possible. Once matching a repetition fails,
-fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map: bool) -> TokenStream {
+fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map: bool, is_first: bool) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
-	let inner = e.build_no_save(inner_return_type, match_type, map);
+	let inner = e.build_no_save(inner_return_type, match_type, map, is_first);
 	quote!{
 		loop {
 			let src_old = src.clone();
@@ -113,10 +113,10 @@ fn build_group_kleene(e: &Value, return_type: ReturnType, match_type: &Type, map
 /// 	*src = src_old;
 /// }
 /// ```
-fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map: bool) -> TokenStream {
+fn build_group_option(e: &Value, return_type: ReturnType, match_type: &Type, map: bool, is_first: bool) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
-	let inner = e.build_no_save(inner_return_type, match_type, map);
+	let inner = e.build_no_save(inner_return_type, match_type, map, is_first);
 	quote!{
 		let src_old = src.clone();
 		if #ret_lifetime: {
