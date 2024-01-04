@@ -10,9 +10,7 @@ pub trait Lifetimes {
 
 impl<T: Lifetimes> Lifetimes for Vec<T> {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
-		for i in self.iter() {
-			i.lifetimes(comp_type, lifetimes)
-		}
+		self.iter().for_each(|i| i.lifetimes(comp_type, lifetimes))
 	}
 }
 
@@ -72,11 +70,18 @@ impl Lifetimes for Value {
 impl Lifetimes for SplitRule {
 	fn lifetimes(&self, comp_type: &Type, lifetimes: &mut HashSet<Lifetime>) {
 		match self {
-			SplitRule::Single(inner) => inner.lifetimes(comp_type, lifetimes),
-			SplitRule::Other { start, middle, end } => {
+			SplitRule::AllPNM(groups) => groups.lifetimes(comp_type, lifetimes),
+			SplitRule::Single { pre_PNM, group, post_PNM } => {
+				pre_PNM.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
+				group.lifetimes(comp_type, lifetimes);
+				post_PNM.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
+			},
+			SplitRule::Other { pre_PNM, start, middle, end, post_PNM } => {
+				pre_PNM.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
 				start.lifetimes(comp_type, lifetimes);
 				middle.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
 				end.lifetimes(comp_type, lifetimes);
+				post_PNM.iter().for_each(|t| t.lifetimes(comp_type, lifetimes));
 			}
 		}
 	}

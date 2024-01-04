@@ -33,7 +33,7 @@ mod nodes {
     use crate::Token;
     
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, Token; ([@Value])+, [@Sep], ([@Value])*, (@Sep)?)]
+    #[parser(Token, Token, NodeType; ([@Value])+, [@Sep], ([@Value])*, (@Sep)?)]
     pub struct Base {
         first: Vec<Value>,
         sep: Sep,
@@ -41,7 +41,7 @@ mod nodes {
     }
     
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, Token)]
+    #[parser(Token, Token, NodeType)]
     pub enum Value {
         #[parser([Token::Digit(t)])]
         Int(usize),
@@ -50,7 +50,7 @@ mod nodes {
     }
     
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, Token)]
+    #[parser(Token, Token, NodeType)]
     pub enum Sep {
         #[parser([Token::Comma])]
         Comma(Token),
@@ -58,6 +58,12 @@ mod nodes {
         SemiColon,
         #[parser(Token::Dot, Token::Dot)]
         Dot
+    }
+
+    pub enum NodeType {
+        Base,
+        Value,
+        Sep
     }
 }
 

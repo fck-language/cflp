@@ -1,6 +1,6 @@
 //! This module contains all the types used throughout the codebase
 
-use syn::{Path, Type, Ident, Expr, Pat, PathSegment};
+use syn::{Path, Type, Ident, Expr, Pat, PathSegment, WhereClause};
 
 mod impls;
 mod parser;
@@ -36,6 +36,8 @@ pub struct Meta {
 	pub tok_type: Type,
 	/// Comparison token type
 	pub cmp_type: Type,
+	/// Scope/backtrace type
+	pub scope: Type,
 	/// Token to token data map
 	pub map: bool,
 	/// If the result is wrapped, contains a `Some` of the type with the wrapped data, otherwise
@@ -44,8 +46,15 @@ pub struct Meta {
 	/// For example, if the result is wrapped with a `usize` (`NodeWrapper<Self, usize>`), this
 	/// would be `Some(usize)`
 	pub wrapped: Option<Type>,
-	/// Name of the type deriving `Parser`
-	pub _self: PathSegment
+	/// Alias for `Self::wrapped::is_some`. Trades one byte for a tiny improvement in performance
+	///
+	/// Let me have my bad decisions
+	pub is_wrapped: bool,
+	/// Name of the type deriving `Parser`. Should *ONLY* be used in the `impl` line, not the body of a function since
+	/// it can include generic constraints
+	pub _self: PathSegment,
+	/// Optional `where` statement for the type
+	pub where_stms: Option<WhereClause>
 }
 
 /// # Rules
@@ -80,7 +89,9 @@ pub enum RuleInnerMatch {
 	/// Named type such as for `MyStruct { a: 1, b: 2 }`
 	Named(Vec<Ident>, SplitRule),
 	/// Unnamed type such as for `MyStruct(1, 2)`
-	Unnamed(SplitRule)
+	Unnamed(SplitRule),
+	/// Unit struct such as `struct Example;`
+	Unit(SplitRule)
 }
 
 /// # Seperated rule
@@ -88,13 +99,28 @@ pub enum RuleInnerMatch {
 /// This enum is used to store seperated rules. It's either a [single group](Self::Single) or
 /// [more than one rule](Self::Other) (rules matching nothing are not allowed). This is useful for
 /// generating wrapped parser impls that require node data
+///
+/// *NOTE*: PNM means _possible no match_ and is either a [`Group::Kleene`] or [`Group::Option`]
+/// group. These groups can match no tokens
 #[derive(Clone)]
+#[allow(non_snake_case)]
 pub enum SplitRule {
-	/// Rule with only one base group in it
-	Single(Box<Group>),
-	/// Rule with more that one base group in it. Note that [`middle`](Self::Other::middle) is not
+	/// Only PNM groups
+	AllPNM(Vec<Group>),
+	/// A singular non-PNM with any number of PNM groups before and after
+	Single {
+		pre_PNM: Vec<Group>,
+		group: Box<Group>,
+		post_PNM: Vec<Group>
+	},
+	/// Rule with more that one base group in it. Note that [`middle`](Self::Other::middle),
+	/// [`pre_PNM`](Self::Other::pre_PNM), and [`post_PNM`](Self::Other::post_PNM) are not
 	/// guaranteed to contain elements
-	Other { start: Box<Group>, middle: Vec<Group>, end: Box<Group> }
+	Other {
+		pre_PNM: Vec<Group>,
+		start: Box<Group>, middle: Vec<Group>, end: Box<Group>,
+		post_PNM: Vec<Group>
+	}
 }
 
 /// # Singular value
@@ -103,9 +129,9 @@ pub enum SplitRule {
 #[derive(Clone)]
 pub enum Value {
 	/// Single value
-	Single(Expr),
+	Single(Pat),
 	/// Call to another rule
-	Call(Ident),
+	Call(Path),
 	/// Saved value. See [`SaveType`]
 	Save { group: SaveType, boxed: bool },
 	/// Group of values. The `bool` is `true` iff the group contains a [save](Value::Save),
@@ -143,7 +169,7 @@ pub enum SaveType {
 	/// Anything that's not a call to another rule is interpreted as a [pattern](syn::Pat). This
 	/// will normally either be a [literal](syn::Pat::Ident), or a [named type](syn::Pat::Struct)
 	/// such as `Foo { a, .. }` or an [un-named type](syn::Pat::TupleStruct) such as `Bar(_, b)`
-	Other { pattern: Pat, explode: bool },
+	Other { pattern: Pat, default: Option<Expr> },
 }
 
 /// Lifetime enum. Used to determine where errors should return to and if a successful result should
@@ -163,10 +189,11 @@ pub enum ReturnType {
 /// describes what type of match is currently being done.
 #[derive(Copy, Clone, PartialEq)]
 pub enum PositionType {
-	/// First matched token
+	/// First matched token. Check `start_set: bool` before writing to `start`
 	Start,
 	/// Last matched token
 	End,
-	/// First and last matched token. Will be split if applied to a group with more than one item in
-	StartEnd
+	/// First and last matched token. Will be split if applied to a group with more than one item in\
+	/// Check `start_set: bool` before writing to `start`
+	StartEnd,
 }

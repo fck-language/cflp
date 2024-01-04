@@ -48,14 +48,14 @@ mod nodes {
     //! This module contains the structs and enums we'll be deriving the [`Parser`] trait for.
     //!
     //! The expended impls are in the [`expanded`](crate::expanded) module
-    use cflp::{NodeWrapper, Parser};
+    use cflp::{NodeWrapper, Parser, Scope};
     use crate::{Token, TokType};
     
     /// # Expression
     ///
     /// This contains self-referential zero-consumption branches ([`Add`](Expr::Add))
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, TokType, usize)]
+    #[parser(Token, TokType, NodeType, usize)]
     pub enum Expr {
         #[parser([[@Expr]], (TokType::Plus, [@Expr])+)]
         Add {
@@ -72,37 +72,62 @@ mod nodes {
         #[parser([@ExprLit])]
         Literal(NodeWrapper<ExprLit, usize>)
     }
+
+    impl Scope<NodeType> for Expr {
+        fn scope() -> NodeType {
+            NodeType::Expr
+        }
+    }
     
     /// # Literal expression
     ///
     /// Simple enum that contains literals only
     #[derive(Debug, Clone, Parser)]
-    #[parser(Token, TokType, usize)]
+    #[parser(Token, TokType, NodeType, usize)]
     pub enum ExprLit {
         #[parser([TokType::Literal(t)])]
         Lit(u8),
         #[parser([TokType::Other(t)])]
         Char(char)
     }
+
+    impl Scope<NodeType> for ExprLit {
+        fn scope() -> NodeType {
+            NodeType::ExprLit
+        }
+    }
+
+    #[derive(Debug)]
+    pub enum NodeType {
+        Expr,
+        ExprLit
+    }
 }
 
 mod expanded {
-    use cflp::{NodeWrapper, Parser};
+    use cflp::{NodeWrapper, Parser, Scope};
     use crate::{Token, TokType};
-    
+    use crate::nodes::NodeType;
+
     #[derive(Debug, Clone)]
     pub enum Expr {
         Bracketed(Box<NodeWrapper<Self, usize>>),
         Add { first: Box<NodeWrapper<Self, usize>>, rem: Vec<NodeWrapper<Self, usize>> },
         Literal(NodeWrapper<ExprLit, usize>),
     }
+
+    impl Scope<NodeType> for Expr {
+        fn scope() -> NodeType {
+            NodeType::Expr
+        }
+    }
     
     #[automatically_derived]
-    impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<Expr, usize>> for Expr {
+    impl<'a> cflp::Parser<&'a Token, TokType, NodeType, cflp::NodeWrapper<Expr, usize>> for Expr {
         fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
             src: &mut T,
             recurse: bool,
-        ) -> Result<cflp::NodeWrapper<Expr, usize>, cflp::Error<&'a Token, TokType>> {
+        ) -> Result<cflp::NodeWrapper<Expr, usize>, cflp::Error<&'a Token, TokType, NodeType>> {
             use cflp::NodeData;
             let mut start = <usize as Default>::default();
             let mut end = <usize as Default>::default();
@@ -115,6 +140,7 @@ mod expanded {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::OP,
                             found: next,
+                            scope: <Self as cflp::Scope<NodeType>>::scope(),
                         });
                     }
                     start = __next.start();
@@ -122,10 +148,11 @@ mod expanded {
                     break 'l0 Err(cflp::Error {
                         expected: TokType::OP,
                         found: next,
+                        scope: <Self as cflp::Scope<NodeType>>::scope(),
                     })
                 };
                 let v_0 = {
-                    match <Expr as cflp::Parser<_, _, _>>::parse(src) {
+                    match <Expr as cflp::Parser<_, _, _, _>>::parse(src) {
                         Ok(t) => Box::new(t),
                         Err(e) => break 'l0 Err(e),
                     }
@@ -136,6 +163,7 @@ mod expanded {
                         break 'l0 Err(cflp::Error {
                             expected: TokType::CP,
                             found: next,
+                            scope: <Self as cflp::Scope<NodeType>>::scope(),
                         });
                     }
                     end = __next.end();
@@ -143,6 +171,7 @@ mod expanded {
                     break 'l0 Err(cflp::Error {
                         expected: TokType::CP,
                         found: next,
+                        scope: <Self as cflp::Scope<NodeType>>::scope(),
                     })
                 };
                 break 'l0 Ok(Expr::Bracketed(v_0));
@@ -166,6 +195,7 @@ mod expanded {
                         break 'l0 Err(cflp::Error {
                             expected: Default::default(),
                             found: None,
+                            scope: <Self as cflp::Scope<NodeType>>::scope(),
                         });
                     }
                     match Expr::parse_with_recursion(src, false) {
@@ -188,6 +218,7 @@ mod expanded {
                                     break 'l1 Err(cflp::Error {
                                         expected: TokType::Plus,
                                         found: next,
+                                        scope: <Self as cflp::Scope<NodeType>>::scope(),
                                     });
                                 }
                                 let rem_out_0 = {
@@ -213,6 +244,7 @@ mod expanded {
                                 break 'l1 Err(cflp::Error {
                                     expected: TokType::Plus,
                                     found: next,
+                                    scope: <Self as cflp::Scope<NodeType>>::scope(),
                                 });
                             }
                             let rem_out_0 = {
@@ -279,13 +311,19 @@ mod expanded {
         Lit(u8),
         Char(char),
     }
+
+    impl Scope<NodeType> for ExprLit {
+        fn scope() -> NodeType {
+            NodeType::ExprLit
+        }
+    }
     
     #[automatically_derived]
-    impl<'a> cflp::Parser<&'a Token, TokType, cflp::NodeWrapper<ExprLit, usize>> for ExprLit {
+    impl<'a> cflp::Parser<&'a Token, TokType, NodeType, cflp::NodeWrapper<ExprLit, usize>> for ExprLit {
         fn parse_with_recursion<T: Iterator<Item = &'a Token> + Clone>(
             src: &mut T,
             recurse: bool,
-        ) -> Result<cflp::NodeWrapper<ExprLit, usize>, cflp::Error<&'a Token, TokType>> {
+        ) -> Result<cflp::NodeWrapper<ExprLit, usize>, cflp::Error<&'a Token, TokType, NodeType>> {
             match src.next() {
                 Some(t_unwrapped) => {
                     let start = <Token as cflp::NodeData<usize>>::start(t_unwrapped);
@@ -309,6 +347,7 @@ mod expanded {
                             Err(cflp::Error {
                                 expected: TokType::Literal(Default::default()),
                                 found: Some(t_unwrapped),
+                                scope: <Self as cflp::Scope<NodeType>>::scope(),
                             })
                         }
                     }
@@ -317,6 +356,7 @@ mod expanded {
                     Err(cflp::Error {
                         expected: TokType::Literal(Default::default()),
                         found: None,
+                        scope: <Self as cflp::Scope<NodeType>>::scope(),
                     })
                 }
             }

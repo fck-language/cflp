@@ -6,45 +6,54 @@
 use std::backtrace::Backtrace;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote, ToTokens};
-use syn::{Ident, Pat, Path, Token, Type};
+use syn::{Expr, Ident, Pat, Path, Token};
 use syn::punctuated::Punctuated;
-use crate::prelude::{Value, Group, ReturnType, SaveType, SplitRule};
+use crate::prelude::{Value, Group, ReturnType, SaveType, SplitRule, Meta};
 
 impl Value {
 	/// Builds a `Value` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map: bool, wrapped: bool, is_first: bool) -> TokenStream {
+	pub(crate) fn build_save(&self, n: &Ident, caller: &Path, return_type: ReturnType, meta: &Meta) -> TokenStream {
 		match self {
 			Value::Single(_) => unreachable!("Value::Single variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
 			Value::Call(_) => unreachable!("Value::Call variant should be inaccessible under a save function\n{}", Backtrace::force_capture()),
-			Value::Save { group: SaveType::Call(rule), boxed } => build_value_save_call(rule, caller, return_type, *boxed, is_first),
-			Value::Save { group: SaveType::Other{ pattern, .. }, .. } => build_value_save_other(pattern, match_type, return_type, map),
-			Value::Group(g, _) => g.build_save(n, caller, return_type, match_type, map, wrapped, is_first)
+			Value::Save { group: SaveType::Call(rule), boxed } => build_value_save_call(rule, caller, return_type, *boxed, meta),
+			Value::Save { group: SaveType::Other{ pattern, default }, .. } => build_value_save_other(pattern, default, return_type, meta),
+			Value::Group(g, _) => g.build_save(n, caller, return_type, meta)
 		}
 	}
 }
 
 impl Group {
-	/// Builds a `Group` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map: bool, wrapped: bool, is_first: bool) -> TokenStream {
+	/// Builds a `Group` to a `TokenStream` and saves the matched group. Does not save any
+	/// positional information
+	///
+	/// # Arguments
+	/// * `n`: Identifier that the save group should use
+	/// * `caller`: The name of the type deriving the impl; or whatever `Self` is an alias for
+	/// * `return_type`: How to return. See [`ReturnType`]
+	/// * `match_type`: Type the tokens are being compared to
+	/// * `map`: Are the input and comparison types the same
+	/// * `scope`: Scope/backtrace type
+	pub(crate) fn build_save(&self, n: &Ident, caller: &Path, return_type: ReturnType, meta: &Meta) -> TokenStream {
 		let mut out = quote!{ let #n = };
 		let inner = match self {
-			Group::Literal(v, _) => v.build_save(n, caller, return_type, match_type, map, wrapped, is_first),
+			Group::Literal(v, _) => v.build_save(n, caller, return_type, meta),
 			Group::Kleene(v, _) => {
 				let n_ident_out = format_ident!("{}_out", n);
 				let mut out = quote!{ let mut #n_ident_out = Vec::new(); };
-				out.extend(kleene_inner(v, n.clone(), n_ident_out, caller, return_type, match_type, map, wrapped, is_first));
+				out.extend(kleene_inner(v, n.clone(), n_ident_out, caller, return_type, meta));
 				out
 			}
 			Group::Positive(v, _) => {
 				// a+ == a a*
-				let mut out = Group::Literal(v.clone(), true).build_save(format_ident!("{}_0", n), caller, return_type, match_type, map, wrapped, is_first);
+				let n_0 = format_ident!("{}_0", n);
+				let mut out = Group::Literal(v.clone(), true).build_save(&n_0, caller, return_type, meta);
 				let n_ident_out = format_ident!("{}_out", n);
-				let n_ident0 = format_ident!("{}_0", n);
-				out.extend(quote!{let mut #n_ident_out = vec![#n_ident0]; });
-				out.extend(kleene_inner(v, n.clone(), n_ident_out, caller, return_type, match_type, map, wrapped, is_first));
+				out.extend(quote!{let mut #n_ident_out = vec![#n_0]; });
+				out.extend(kleene_inner(v, n.clone(), n_ident_out, caller, return_type, meta));
 				out
 			}
-			Group::Option(v, _) => build_group_option(v, n.clone(), caller, return_type, match_type, map, wrapped, is_first)
+			Group::Option(v, _) => build_group_option(v, n.clone(), caller, return_type, meta)
 		};
 		out.extend(quote!{ { #inner }; });
 		out
@@ -53,41 +62,81 @@ impl Group {
 
 impl SplitRule {
 	/// Builds a `Value` to a `TokenStream` and saves it
-	pub(crate) fn build_save(&self, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map: bool, wrapped: bool, is_first: bool) -> TokenStream {
+	pub(crate) fn build_save(&self, n: &Ident, caller: &Path, return_type: ReturnType, meta: &Meta) -> TokenStream {
 		let inner_return_type = return_type.set_wrapped(false);
 		let mut out = TokenStream::new();
-		let mut k: usize;
+		let mut k = 0usize;
 		match self {
-			SplitRule::Single(inner) => {
-				if inner.contains_save() {
-					out.extend(inner.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped, is_first));
-					k = 1
-				} else {
-					out.extend(inner.build_no_save(inner_return_type, match_type, map, is_first));
-					k = 0
+			SplitRule::AllPNM(groups) => {
+				for i in groups.iter() {
+					if i.contains_save() {
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+						k += 1
+					} else {
+						out.extend(i.build_no_save(inner_return_type, meta));
+					}
 				}
 			}
-			SplitRule::Other { start, middle, end } => {
-				if start.contains_save() {
-					out.extend(start.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped, is_first));
-					k = 1
+			SplitRule::Single { pre_PNM, group, post_PNM } => {
+				for i in pre_PNM.iter() {
+					if i.contains_save() {
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+						k += 1
+					} else {
+						out.extend(i.build_no_save(inner_return_type, meta));
+					}
+				}
+				if group.contains_save() {
+					out.extend(group.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+					k += 1
 				} else {
-					out.extend(start.build_no_save(inner_return_type, match_type, map, is_first));
-					k = 0
+					out.extend(group.build_no_save(inner_return_type, meta));
+				}
+				for i in post_PNM.iter() {
+					if i.contains_save() {
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+						k += 1
+					} else {
+						out.extend(i.build_no_save(inner_return_type, meta));
+					}
+				}
+			}
+			SplitRule::Other { pre_PNM, start, middle, end, post_PNM } => {
+				for i in pre_PNM.iter() {
+					if i.contains_save() {
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+						k += 1
+					} else {
+						out.extend(i.build_no_save(inner_return_type, meta));
+					}
+				}
+				if start.contains_save() {
+					out.extend(start.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+					k += 1
+				} else {
+					out.extend(start.build_no_save(inner_return_type, meta));
 				}
 				for i in middle.iter() {
 					if i.contains_save() {
-						out.extend(i.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
 						k += 1
 					} else {
-						out.extend(i.build_no_save(inner_return_type, match_type, map, false));
+						out.extend(i.build_no_save(inner_return_type, meta));
 					}
 				}
 				if end.contains_save() {
-					out.extend(end.build_save(format_ident!("{}_{}", n, k), caller, inner_return_type, match_type, map, wrapped, false));
+					out.extend(end.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
 					k += 1
 				} else {
-					out.extend(end.build_no_save(inner_return_type, match_type, map, false));
+					out.extend(end.build_no_save(inner_return_type, meta));
+				}
+				for i in post_PNM.iter() {
+					if i.contains_save() {
+						out.extend(i.build_save(&format_ident!("{}_{}", n, k), caller, inner_return_type, meta));
+						k += 1
+					} else {
+						out.extend(i.build_no_save(inner_return_type, meta));
+					}
 				}
 			}
 		}
@@ -101,15 +150,16 @@ impl SplitRule {
 	}
 }
 
-pub fn build_match_arm_err(pattern: &Pat) -> (TokenStream, TokenStream) {
-	let expected = value_save_other_expected(pattern);
+pub fn build_match_arm_err(pattern: &Pat, default: Option<&Expr>, meta: &Meta) -> (TokenStream, TokenStream) {
+	let scope = &meta.scope;
+	let expected = if let Some(def) = default { def.to_token_stream() } else { value_save_other_expected(pattern) };
 	(
-		quote!{ _ => Err(cflp::Error { expected: #expected, found: None }) },
-		quote!{ _ => Err(cflp::Error { expected: #expected, found: Some(t_unwrapped) }) }
+		quote!{ _ => Err(cflp::Error { expected: #expected, found: None, scope: vec![<Self as cflp::Scope<#scope>>::scope()] }) },
+		quote!{ _ => Err(cflp::Error { expected: #expected, found: Some(t_unwrapped), scope: vec![<Self as cflp::Scope<#scope>>::scope()] }) }
 	)
 }
 
-/// ```rust
+/// ```rust, ignore
 /// loop {
 /// 	let src_old = src.clone();
 /// 	match 'l: {
@@ -123,10 +173,11 @@ pub fn build_match_arm_err(pattern: &Pat) -> (TokenStream, TokenStream) {
 /// 	}
 /// }
 /// ```
-fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map: bool, wrapped: bool, is_first: bool) -> TokenStream {
+fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: ReturnType, meta: &Meta) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let lifetime = inner_return_type.get_lifetime();
-	let match_inner = v.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped, is_first);
+	let n_0 = format_ident!("{}_0", n);
+	let match_inner = v.build_save(&n_0, caller, inner_return_type, meta);
 	quote!{
 		loop {
 			let src_old = src.clone();
@@ -140,7 +191,8 @@ fn kleene_inner(v: &Value, n: Ident, out: Ident, caller: &Path, return_type: Ret
 }
 
 /// Matches the returned value of a rule call and optionally boxes and/or wrap the result in an `Ok`
-fn build_value_save_call(e: &Path, caller: &Path, return_type: ReturnType, is_boxed: bool, is_first: bool) -> TokenStream {
+fn build_value_save_call(e: &Path, caller: &Path, return_type: ReturnType, is_boxed: bool, meta: &Meta) -> TokenStream {
+	let scope = &meta.scope;
 	let ok_ret = match (is_boxed, return_type.is_wrapped()) {
 		(true, true) => quote!{ Ok(Box::new(t)) },
 		(true, false) => quote!{ Box::new(t) },
@@ -148,67 +200,86 @@ fn build_value_save_call(e: &Path, caller: &Path, return_type: ReturnType, is_bo
 		(false, false) => quote!{ t }
 	};
 	let ret = return_type.to_token_stream(quote!{Err(e)});
-	if is_first && e.segments.first().unwrap().ident.to_string() == caller.segments.first().unwrap().ident.to_string() {
+	let first_seg_e = e.segments.first().unwrap().ident.to_string();
+	if first_seg_e == caller.segments.first().unwrap().ident.to_string() || &*first_seg_e == "Self" {
 		let ret_recurse = return_type.to_token_stream(quote!{
 			Err(cflp::Error {
-				expected: Defalt::default(),
-				found: None
+				expected: Default::default(),
+				found: None,
+				scope: vec![<Self as cflp::Scope<#scope>>::scope()]
 			})
 		});
 		quote!{
-			if !recurse {
+			if !recurse && !consumed_tokens {
 				#ret_recurse
 			}
-			match <#e as cflp::Parser<_, _, _>>::parse_with_recursion(src, false) {
+			match <#e as cflp::Parser<_, _, #scope, _>>::parse_with_recursion(src, false) {
 				Ok(t) => #ok_ret,
-				Err(e) => #ret
+				Err(mut e) => {
+					e.push_scope(<Self as Scope<#scope>>::scope());
+					#ret
+				}
 			}
 		}
 	} else {
 		quote!{
-			match <#e as cflp::Parser<_, _, _>>::parse_with_recursion(src, true) {
+			match <#e as cflp::Parser<_, _, #scope, _>>::parse_with_recursion(src, true) {
 				Ok(t) => #ok_ret,
-				Err(e) => #ret
+				Err(mut e) => {
+					e.push_scope(<Self as Scope<#scope>>::scope());
+					#ret
+				}
 			}
 		}
 	}
 }
 
-/// ```rust
+/// ```rust, ignore
 /// let next = src.next();
+/// match next {
+/// 	Some(__next_unwrapped) => {
+/// 		if Into::<cmp>::into(__next_unwrapped.clone()) ==
+/// 	}
+/// 	None => Err(err_inner)
+/// }
 /// match next.clone().map(Into::<cmp>::into) {
 /// 	Some(next_match @ e_match_arm()) => some_return_value,
 /// 	_ => Err(err_inner)
 /// };
 /// ```
-fn build_value_save_other(p: &Pat, cmp: &Type, return_type: ReturnType, map: bool) -> TokenStream {
+fn build_value_save_other(p: &Pat, default: &Option<Expr>, return_type: ReturnType, meta: &Meta) -> TokenStream {
+	let cmp = &meta.cmp_type;
+	let scope = &meta.scope;
+
 	let returned_args = value_save_other_get_args(p);
 	let ok_arm = if returned_args.is_empty() {
 		if return_type.is_wrapped() {
-			quote!{ Some(next_match @ (#p)) => Ok(next_match) }
+			quote!{ Ok(__next.clone()) }
 		} else {
-			quote!{ Some(next_match @ (#p)) => next_match }
+			quote!{ __next.clone() }
 		}
 	} else {
 		match (returned_args.len(), return_type.is_wrapped()) {
-			(1, false) => quote!{ Some(#p) => #(#returned_args.clone()),* },
-			(1, true) => quote!{ Some(#p) => Ok(#(#returned_args.clone()),*) },
-			(_, false) => quote!{ Some(#p) => (#(#returned_args.clone()),*) },
-			(_, true) => quote!{ Some(#p) => Ok((#(#returned_args.clone()),*)) },
+			(1, false) => quote!{ #(#returned_args.clone()),* },
+			(1, true) => quote!{ Ok(#(#returned_args.clone()),*) },
+			(_, false) => quote!{ (#(#returned_args.clone()),*) },
+			(_, true) => quote!{ Ok((#(#returned_args.clone()),*)) },
 		}
 	};
 	
-	let expect = value_save_other_expected(p);
-	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { found: next, expected: #expect }) });
-	let match_expr = if map {
-		quote!{ next.clone().map(Into::<#cmp>::into) }
+	let expect = if let Some(def) = default { quote!{ #def } } else { value_save_other_expected(p) };
+	let err = return_type.to_token_stream(quote!{ Err(cflp::Error { found: next, expected: #expect, scope: vec![<Self as Scope<#scope>>::scope()] }) });
+	let match_expr = if meta.is_wrapped {
+		quote!{ Into::<#cmp>::into(__next) }
 	} else {
-		quote!{ next }
+		quote!{ __next }
 	};
-	quote!{
+	quote! {
 		let next = src.next();
-		match #match_expr {
-			#ok_arm,
+		match next {
+			Some(__next) => if let #p = #match_expr {
+				#ok_arm
+			} else { #err }
 			_ => #err
 		}
 	}
@@ -229,7 +300,7 @@ pub fn value_save_other_get_args(p: &Pat) -> Vec<Ident> {
 	}
 }
 
-fn value_save_other_expected(p: &Pat) -> TokenStream {
+pub(crate) fn value_save_other_expected(p: &Pat) -> TokenStream {
 	match p {
 		Pat::Lit(lit) => quote!{ #lit },
 		Pat::Macro(m) => quote!{ #m },
@@ -266,17 +337,18 @@ fn value_save_other_expected(p: &Pat) -> TokenStream {
 	}
 }
 
-/// ```rust
+/// ```rust, ignore
 /// let src_old = src.clone();
 /// match 'l: { v.build() } {
 /// 	Ok(t) => Some(t),
 /// 	Err(e) => { *src = src_old; None }
 /// };
 /// ```
-fn build_group_option(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, match_type: &Type, map: bool, wrapped: bool, is_first: bool) -> TokenStream {
+fn build_group_option(e: &Value, n: Ident, caller: &Path, return_type: ReturnType, meta: &Meta) -> TokenStream {
 	let inner_return_type = return_type.new_lifetime(true);
 	let ret_lifetime = inner_return_type.get_lifetime();
-	let inner = e.build_save(format_ident!("{}_0", n), caller, inner_return_type, match_type, map, wrapped, is_first);
+	let n_0 = format_ident!("{}_0", n);
+	let inner = e.build_save(&n_0, caller, inner_return_type, meta);
 	quote!{
 		let src_old = src.clone();
 		match #ret_lifetime: { #inner } {

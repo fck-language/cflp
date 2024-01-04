@@ -6,60 +6,33 @@
 
 use proc_macro2::TokenStream;
 use quote::{quote, ToTokens};
-use syn::Pat;
+use syn::{Expr, Pat};
 use crate::build::save::value_save_other_get_args;
 use crate::prelude::{Group, RuleInner, RuleInnerMatch, SaveType, SplitRule, Value};
 
-pub trait IsSingular {
-	fn is_singular(&self) -> bool;
-}
-
-impl IsSingular for Value {
-	fn is_singular(&self) -> bool {
-		match self {
-			Value::Single(_) => true,
-			Value::Save { group: SaveType::Other { .. }, .. } => true,
-			Value::Group(g, _) => g.is_singular(),
-			_ => false,
-		}
-	}
-}
-
-impl IsSingular for Group {
-	fn is_singular(&self) -> bool {
-		match self {
-			Group::Literal(inner, _) => inner.is_singular(),
-			_ => false
-		}
-	}
-}
-
-impl IsSingular for SplitRule {
-	fn is_singular(&self) -> bool {
-		match self {
-			SplitRule::Single(v) => v.is_singular(),
-			SplitRule::Other { start, .. } => start.is_singular(),
-		}
-	}
-}
-
 impl RuleInner {
-	pub fn is_singular(&self) -> Option<(&Self, Pat, bool)> {
+	pub fn is_singular(&self) -> Option<(&Self, Pat, Option<&Expr>, bool)> {
 		let group = match &self.inner {
 			RuleInnerMatch::Named(_, g) => g,
-			RuleInnerMatch::Unnamed(g) => g
+			RuleInnerMatch::Unnamed(g) => g,
+			RuleInnerMatch::Unit(g) => g,
 		};
 		let first = match group {
-			SplitRule::Single(g) => g,
+			SplitRule::AllPNM(groups) => {
+				if let &[ref single] = &**groups { single } else { return None }
+			}
+			SplitRule::Single { pre_PNM, group, ..} => {
+				if pre_PNM.is_empty() { &**group } else { return None }
+			},
 			SplitRule::Other { .. } => return None,
 		};
-		if let Group::Literal(ref v, _) = **first {
+		if let Group::Literal(ref v, _) = first {
 			match v {
 				Value::Single(e) => {
-					Some((self, Pat::Verbatim(e.to_token_stream()), false))
+					Some((self, Pat::Verbatim(e.to_token_stream()), None, false))
 				}
-				Value::Save { group: SaveType::Other { pattern, .. }, .. } => {
-					Some((self, pattern.clone(), true))
+				Value::Save { group: SaveType::Other { pattern, default }, .. } => {
+					Some((self, pattern.clone(), default.as_ref(), true))
 				}
 				_ => None
 			}
@@ -72,7 +45,10 @@ impl RuleInner {
 		match &self.inner {
 			RuleInnerMatch::Named(names, g) => {
 				match g {
-					SplitRule::Single(_) => {
+					SplitRule::AllPNM(_) => {
+						todo!()
+					}
+					SplitRule::Single { .. } => {
 						if args.is_empty() {
 							match (wrapped, saves) {
 								(true, true) => quote!{ __next_unwrapped @ #p => Ok(cflp::NodeWrapper { start, end, node: #var(__next_unwrapped.clone()) }) },
@@ -94,7 +70,7 @@ impl RuleInner {
 			}
 			RuleInnerMatch::Unnamed(g) => {
 				match g {
-					SplitRule::Single(_) => {
+					SplitRule::Single { .. } | SplitRule::AllPNM(_) => {
 						if args.is_empty() {
 							match (wrapped, saves) {
 								(true, true) => quote!{ __next_unwrapped @ #p => Ok(cflp::NodeWrapper { start, end, node: #var(__next_unwrapped.clone()) }) },
@@ -103,16 +79,29 @@ impl RuleInner {
 								(false, false) => quote!{ #p => Ok(#var) }
 							}
 						} else {
-							if wrapped {
-								quote!{ #p => Ok(cflp::NodeWrapper { start, end, node: #var(#(#args.clone()),*) }) }
-							} else {
-								quote!{ #p => Ok(#var(#(#args.clone()),*)) }
+							match (wrapped, args.len() > 1) {
+								(true, true) => quote!{ #p => Ok(cflp::NodeWrapper { start, end, node: #var((#(#args.clone()),*)) }) },
+								(true, false) => quote!{ #p => Ok(cflp::NodeWrapper { start, end, node: #var(#(#args.clone()),*) }) },
+								(false, true) => quote!{ #p => Ok(#var((#(#args.clone()),*))) },
+								(false, false) => quote!{ #p => Ok(#var(#(#args.clone()),*)) },
 							}
 						}
 					}
 					SplitRule::Other { .. } => {
 						todo!()
 					}
+				}
+			}
+			RuleInnerMatch::Unit(g) => {
+				match g {
+					SplitRule::AllPNM(_) | SplitRule::Single { .. } => {
+						if wrapped {
+							quote!{ #p => Ok(cflp::NodeWrapper { start, end, node: #var }) }
+						} else {
+							quote!{ #p => Ok(#var) }
+						}
+					}
+					SplitRule::Other { .. } => unreachable!()
 				}
 			}
 		}
